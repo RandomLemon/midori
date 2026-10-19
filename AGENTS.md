@@ -4,7 +4,7 @@ Operational instructions for coding agents working on Midori, a Linux/Wayland di
 
 ## Project
 
-Midori is a Linux/Wayland display-configuration GUI for the niri compositor, written in Go with Fyne, and designed so additional compositor backends can be added without changing the UI. The repository contains the M1 implementation: module skeleton, domain and service layers, the niri IPC backend, and a read-only Fyne window. Apply and revert logic exists in the service and niri backend, but the UI remains read-only until M2. The authoritative design starts at [`docs/README.md`](docs/README.md).
+Midori is a Linux/Wayland display-configuration GUI for the niri compositor, written in Go with Fyne, and designed so additional compositor backends can be added without changing the UI. The repository contains the M2 implementation: module skeleton, domain and service layers, the niri IPC backend, a Fyne window with editable output controls, and the apply/confirmation/revert flow. Arrangement editing, packaging, and Hyprland remain future milestones. The authoritative design starts at [`docs/README.md`](docs/README.md).
 
 - Module path: `github.com/RandomLemon/midori`
 - Binary name: `midori`
@@ -45,7 +45,7 @@ Documented timeouts and limits: backend operation timeout `5` seconds, niri dial
 
 ## Target repository layout
 
-This tree is the package contract. M1 implements `cmd/midori`, `internal/app`, `internal/display`, `internal/backend`, `internal/backend/niri`, `internal/layout`, `internal/ui`, and `internal/testutil/fakebackend`; `internal/backend/hyprland` remains future work.
+This tree is the package contract. M2 implements `cmd/midori`, `internal/app`, `internal/display`, `internal/backend`, `internal/backend/niri`, `internal/layout`, `internal/ui`, and `internal/testutil/fakebackend`; `internal/backend/hyprland` remains future work.
 
 ```text
 cmd/midori/main.go              flags, backend selection, app bootstrap
@@ -61,7 +61,7 @@ internal/testutil/fakebackend/  scriptable test backend
 
 ## Toolchain and commands
 
-These commands are active for the M1 implementation. The `wayland` build tag is mandatory for running under niri because niri is Wayland-only; Fyne's default Linux build targets X11.
+These commands are active for the M2 implementation. The `wayland` build tag is mandatory for running under niri because niri is Wayland-only; Fyne's default Linux build targets X11.
 
 ```sh
 CGO_ENABLED=1 go build -tags wayland -trimpath -o bin/midori ./cmd/midori

@@ -67,9 +67,13 @@ func TestWindowSnapshotAndSelection(t *testing.T) {
 		t.Fatalf("backend badge = %q", got)
 	}
 
-	window.SetSnapshot(display.Snapshot{Outputs: uiOutputs()})
+	window.SetOutputs(uiOutputs())
 	window.SetBusy(false)
+	window.SetEditable(true)
+	window.SetDirty(false)
+	window.SetValid(true)
 	window.SetReady(true)
+	window.SetStatus("Session-only changes")
 
 	if len(window.canvas.tiles) != 2 {
 		t.Fatalf("canvas tiles = %d, want 2 enabled outputs", len(window.canvas.tiles))
@@ -114,7 +118,8 @@ func TestWindowUnsupportedAndLostConnection(t *testing.T) {
 		t.Fatal("retry button should be enabled")
 	}
 
-	window.SetSnapshot(display.Snapshot{Outputs: uiOutputs()})
+	window.SetOutputs(uiOutputs())
+	window.SetBusy(false)
 	window.ShowLostConnection()
 	if !window.mainView.Visible() || window.unsupportedView.Visible() {
 		t.Fatal("lost connection should keep the main view")
@@ -160,5 +165,122 @@ func TestFormatting(t *testing.T) {
 	}
 	if got := formatPosition(display.Point{X: -1920, Y: 10}); got != "-1920, 10" {
 		t.Fatalf("formatPosition() = %q", got)
+	}
+}
+
+func TestEditingControlsAndApplyBar(t *testing.T) {
+	fyneApp := testApp()
+	defer fyneApp.Quit()
+	var edited display.OutputState
+	window := New(fyneApp, Callbacks{
+		OnEdit: func(id display.OutputID, state display.OutputState) {
+			if id == "HDMI-A-1" {
+				edited = state
+			}
+		},
+	})
+	window.SetOutputs(uiOutputs())
+	window.SetBusy(false)
+	window.SetEditable(true)
+	window.SetDirty(false)
+	window.SetValid(true)
+	window.SetReady(true)
+
+	window.canvas.Resize(fyne.NewSize(800, 600))
+	beforeWidth := window.canvas.tiles["HDMI-A-1"].Size().Width
+	window.inspector.scaleChanged(2.0)
+	afterWidth := window.canvas.tiles["HDMI-A-1"].Size().Width
+	if afterWidth >= beforeWidth {
+		t.Fatalf("tile width did not shrink after scale change: %v -> %v", beforeWidth, afterWidth)
+	}
+	window.SetDirty(true)
+	if edited.Scale != 2.0 {
+		t.Fatalf("edited scale = %v, want 2.0", edited.Scale)
+	}
+	if window.applyButton.Disabled() {
+		t.Fatal("apply should be enabled for a valid dirty draft")
+	}
+
+	window.SetValid(false)
+	if !window.applyButton.Disabled() {
+		t.Fatal("apply should be disabled for an invalid draft")
+	}
+	if window.resetButton.Disabled() {
+		t.Fatal("reset should remain enabled for an invalid dirty draft")
+	}
+
+	window.SetValid(true)
+	window.inspector.posX.SetText("invalid")
+	window.inspector.positionChanged("invalid")
+	if !window.applyButton.Disabled() {
+		t.Fatal("apply should be disabled for an invalid position entry")
+	}
+
+	window.SetEditable(false)
+	if !window.inspector.enabled.Disabled() || !window.inspector.scale.Disabled() {
+		t.Fatal("inspector controls should be disabled while busy")
+	}
+}
+
+func TestConfirmationPopupCallbacks(t *testing.T) {
+	fyneApp := testApp()
+	defer fyneApp.Quit()
+	kept := 0
+	reverted := 0
+	window := New(fyneApp, Callbacks{
+		OnKeep:   func() { kept++ },
+		OnRevert: func() { reverted++ },
+	})
+	window.ShowConfirmation(15)
+	if !window.confirming {
+		t.Fatal("confirmation should be visible")
+	}
+	if got := window.countdown.Text; got != "Reverting in 15 s" {
+		t.Fatalf("countdown = %q", got)
+	}
+	window.SetCountdown(3)
+	if got := window.countdown.Text; got != "Reverting in 3 s" {
+		t.Fatalf("countdown = %q", got)
+	}
+	test.Tap(window.keepButton)
+	if kept != 1 {
+		t.Fatalf("keep callback count = %d", kept)
+	}
+	window.HideConfirmation()
+	if window.confirming {
+		t.Fatal("confirmation should be hidden")
+	}
+
+	window.ShowConfirmation(15)
+	test.Tap(window.revertButton)
+	if reverted != 1 {
+		t.Fatalf("revert callback count = %d", reverted)
+	}
+	window.ShowConfirmation(15)
+	window.win.Canvas().OnTypedKey()(&fyne.KeyEvent{Name: fyne.KeyEscape})
+	if reverted != 2 {
+		t.Fatalf("escape revert callback count = %d", reverted)
+	}
+	window.ShowReverting()
+	if !window.revertButton.Disabled() || !window.keepButton.Disabled() {
+		t.Fatal("confirmation buttons should be disabled while reverting")
+	}
+	window.HideConfirmation()
+}
+
+func TestValidationCopy(t *testing.T) {
+	tests := []struct {
+		err  error
+		want string
+	}{
+		{&display.ValidationError{OutputID: "eDP-1", Field: "mode"}, "Select an available mode."},
+		{&display.ValidationError{OutputID: "eDP-1", Field: "scale"}, "Scale must be between 50% and 300%."},
+		{&display.ValidationError{OutputID: "eDP-1", Field: "position"}, "Displays must not overlap."},
+		{&display.ValidationError{Field: "enabled"}, "At least one display must remain enabled."},
+	}
+	for _, tt := range tests {
+		if got := validationCopy(tt.err); got != tt.want {
+			t.Errorf("validationCopy(%v) = %q, want %q", tt.err, got, tt.want)
+		}
 	}
 }

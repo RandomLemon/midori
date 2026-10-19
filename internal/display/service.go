@@ -90,7 +90,7 @@ func (s *Service) Apply(ctx context.Context, targets map[OutputID]OutputState) (
 		desired[id] = output
 	}
 
-	if err := validate(s.backend.Capabilities(), desired, targets); err != nil {
+	if err := validate(s.backend.Capabilities(), desired, targets, before); err != nil {
 		return nil, err
 	}
 
@@ -114,10 +114,10 @@ func (s *Service) Apply(ctx context.Context, targets map[OutputID]OutputState) (
 	attempted := make([]Change, 0, len(changes))
 	for _, change := range changes {
 		attempted = append(attempted, change)
-		if err := s.backend.Apply(ctx, change); err != nil {
+		if err := s.applyChange(ctx, change); err != nil {
 			applyErr := fmt.Errorf("display: apply %s: %w", change.Before.ID, err)
 			if rollbackErr := s.rollback(ctx, attempted, desired); rollbackErr != nil {
-				return nil, fmt.Errorf("%w; rollback failed: %w", applyErr, rollbackErr)
+				return nil, &ApplyError{Err: applyErr, RollbackErr: rollbackErr}
 			}
 			return nil, applyErr
 		}
@@ -127,7 +127,7 @@ func (s *Service) Apply(ctx context.Context, targets map[OutputID]OutputState) (
 	if err != nil {
 		reloadErr := fmt.Errorf("display: reload after apply: %w", err)
 		if rollbackErr := s.rollback(ctx, attempted, desired); rollbackErr != nil {
-			return nil, fmt.Errorf("%w; rollback failed: %w", reloadErr, rollbackErr)
+			return nil, &ApplyError{Err: reloadErr, RollbackErr: rollbackErr}
 		}
 		return nil, reloadErr
 	}
@@ -176,7 +176,7 @@ func (s *Service) Revert(ctx context.Context, before Snapshot) error {
 	})
 
 	for _, change := range changes {
-		if err := s.backend.Apply(ctx, change); err != nil {
+		if err := s.applyChange(ctx, change); err != nil {
 			return fmt.Errorf("display: revert %s: %w", change.Before.ID, err)
 		}
 	}
@@ -214,7 +214,7 @@ func (s *Service) rollback(ctx context.Context, attempted []Change, desired map[
 			Before: outputWithState(change.Before, now.OutputState),
 			After:  change.Before.OutputState,
 		}
-		if err := s.backend.Apply(ctx, rb); err != nil {
+		if err := s.applyChange(ctx, rb); err != nil {
 			if errors.Is(err, ErrOutputMissing) {
 				slog.Debug("display: skip rollback for missing output", "output", change.Before.ID)
 				continue
@@ -225,7 +225,7 @@ func (s *Service) rollback(ctx context.Context, attempted []Change, desired map[
 	return errors.Join(errs...)
 }
 
-func validate(caps Capabilities, desired map[OutputID]Output, targets map[OutputID]OutputState) error {
+func validate(caps Capabilities, desired map[OutputID]Output, targets map[OutputID]OutputState, current Snapshot) error {
 	enabled := 0
 	for _, output := range desired {
 		if output.Enabled {
@@ -247,7 +247,7 @@ func validate(caps Capabilities, desired map[OutputID]Output, targets map[Output
 		if state.Mode.Width <= 0 || state.Mode.Height <= 0 || state.Mode.RefreshMilliHz == 0 {
 			return invalid(id, "mode", "select an available mode")
 		}
-		if !modeAllowed(output, state.Mode) {
+		if !modeAllowed(output, state.Mode, current) {
 			return invalid(id, "mode", "select an available mode")
 		}
 		if math.IsNaN(state.Scale) || math.IsInf(state.Scale, 0) || state.Scale < 0.5 || state.Scale > 3.0 {
@@ -283,9 +283,11 @@ func validate(caps Capabilities, desired map[OutputID]Output, targets map[Output
 	return nil
 }
 
-func modeAllowed(output Output, mode Mode) bool {
-	if output.IsCustomMode && sameMode(output.Mode, mode) {
-		return true
+func modeAllowed(output Output, mode Mode, current Snapshot) bool {
+	if output.IsCustomMode {
+		if original, ok := current.Output(output.ID); ok && sameMode(original.Mode, mode) {
+			return true
+		}
 	}
 	for _, advertised := range output.Modes {
 		if sameMode(advertised, mode) {
@@ -327,4 +329,49 @@ func outputByID(snapshot Snapshot, id OutputID) *Output {
 func outputWithState(output Output, state OutputState) Output {
 	output.OutputState = state
 	return output
+}
+
+// ApplyError reports a failed apply and, when non-nil, a failed rollback.
+type ApplyError struct {
+	Err         error
+	RollbackErr error
+}
+
+func (e *ApplyError) Error() string {
+	if e.RollbackErr != nil {
+		return fmt.Sprintf("%v; rollback failed: %v", e.Err, e.RollbackErr)
+	}
+	return e.Err.Error()
+}
+
+func (e *ApplyError) Unwrap() error {
+	return e.Err
+}
+
+// IsRollbackFailure reports whether err includes a failed rollback.
+func IsRollbackFailure(err error) bool {
+	var applyErr *ApplyError
+	return errors.As(err, &applyErr) && applyErr.RollbackErr != nil
+}
+
+// StatesEqual reports whether two states produce the same compositor effect.
+func StatesEqual(a, b OutputState) bool {
+	return stateEqual(a, b)
+}
+
+// ValidateDraft validates a complete set of desired output states.
+func ValidateDraft(caps Capabilities, current Snapshot, outputs []Output) error {
+	desired := make(map[OutputID]Output, len(outputs))
+	targets := make(map[OutputID]OutputState, len(outputs))
+	for _, output := range outputs {
+		desired[output.ID] = output
+		targets[output.ID] = output.OutputState
+	}
+	return validate(caps, desired, targets, current)
+}
+
+func (s *Service) applyChange(ctx context.Context, change Change) error {
+	opCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+	return s.backend.Apply(opCtx, change)
 }

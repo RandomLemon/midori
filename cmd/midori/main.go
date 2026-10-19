@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
+	"strings"
+	"syscall"
 	"time"
 
 	"fyne.io/fyne/v2/app"
@@ -21,6 +23,7 @@ const applicationID = "io.github.randomlemon.midori"
 var version = "dev"
 
 func main() {
+	ensureEnglishLocale()
 	backendName := flag.String("backend", "auto", "backend to use: auto, niri, or hyprland")
 	debug := flag.Bool("debug", false, "enable debug logging")
 	showVersion := flag.Bool("version", false, "print the version and exit")
@@ -63,6 +66,31 @@ func main() {
 
 	var controller *midoriapp.Controller
 	view := ui.New(fyneApp, ui.Callbacks{
+		OnEdit: func(id display.OutputID, state display.OutputState) {
+			if controller != nil {
+				controller.EditOutput(id, state)
+			}
+		},
+		OnApply: func() {
+			if controller != nil {
+				controller.Apply()
+			}
+		},
+		OnReset: func() {
+			if controller != nil {
+				controller.Reset()
+			}
+		},
+		OnKeep: func() {
+			if controller != nil {
+				controller.Keep()
+			}
+		},
+		OnRevert: func() {
+			if controller != nil {
+				controller.RevertNow()
+			}
+		},
 		OnRefresh: func() {
 			if controller != nil {
 				controller.Refresh()
@@ -82,4 +110,35 @@ func main() {
 	if selected != nil {
 		_ = selected.Close()
 	}
+}
+
+// ensureEnglishLocale re-executes the process once with an English locale.
+// Fyne resolves its UI locale during package initialization, before main runs,
+// so setting environment variables here is too late.
+func ensureEnglishLocale() {
+	if os.Getenv("MIDORI_LOCALE_READY") == "1" {
+		return
+	}
+	exe, err := os.Executable()
+	if err != nil {
+		return
+	}
+	env := os.Environ()
+	overrides := map[string]string{
+		"LANG":                "en_US.UTF-8",
+		"LC_ALL":              "en_US.UTF-8",
+		"LANGUAGE":            "en",
+		"MIDORI_LOCALE_READY": "1",
+	}
+	for index, entry := range env {
+		key, _, _ := strings.Cut(entry, "=")
+		if value, ok := overrides[key]; ok {
+			env[index] = key + "=" + value
+			delete(overrides, key)
+		}
+	}
+	for key, value := range overrides {
+		env = append(env, key+"="+value)
+	}
+	_ = syscall.Exec(exe, os.Args, env)
 }

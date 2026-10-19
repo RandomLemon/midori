@@ -2,7 +2,7 @@
 
 How to build, test, and extend Midori, including toolchain, dependencies, test strategy, CI, and packaging.
 
-Status: M1 implemented. The commands below are active for the current module. See [architecture.md](architecture.md) for package contracts and [AGENTS.md](../AGENTS.md) for agent rules.
+Status: M2 implemented. The commands below are active for the current module. See [architecture.md](architecture.md) for package contracts and [AGENTS.md](../AGENTS.md) for agent rules.
 
 ## Toolchain
 
@@ -13,6 +13,8 @@ Status: M1 implemented. The commands below are active for the current module. Se
 - Linux/Wayland. niri is Wayland-only.
 
 Fyne's default Linux build targets X11. The `wayland` build tag selects the Wayland driver, so every build and run command uses it. Building without the tag produces a binary that cannot open a window under a pure niri session.
+
+The binary re-executes once with an English locale (`LANG` and `LC_ALL` set to `en_US.UTF-8`, `LANGUAGE=en`) because Fyne resolves its widget locale before `main` runs. This keeps built-in Fyne menus and placeholders English, matching the project language policy.
 
 ## System dependencies
 

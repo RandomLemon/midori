@@ -2,7 +2,7 @@
 
 The implementation contract for Midori: package boundaries, domain types, the backend interface, the apply and revert transaction, validation, layout math, and failure handling.
 
-Status: Design draft. M1 implements the read-only path; service apply/revert and niri apply actions exist and are tested, but no editing UI uses them yet. This document is authoritative for types and behavior. Product scope is in [product.md](product.md); interaction details are in [ui.md](ui.md).
+Status: Design draft. M2 implements the editable inspector and the apply/confirmation/revert transaction. Arrangement editing and Hyprland remain future work. This document is authoritative for types and behavior. Product scope is in [product.md](product.md); interaction details are in [ui.md](ui.md).
 
 ## Context and constraints
 

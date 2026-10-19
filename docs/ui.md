@@ -2,7 +2,7 @@
 
 Pixel-level and interaction-level specification for the Fyne UI, including exact copy for empty, error, and confirmation states.
 
-Status: Design draft. M1 implements the read-only subset: header, output list, canvas, inspector details, loading and error states. Editing controls, the apply bar, and confirmation remain M2/M3. Behavior contracts live in [architecture.md](architecture.md); scope lives in [product.md](product.md).
+Status: Design draft. M2 implements the header, output list, canvas, editable inspector, apply bar, 15-second confirmation, revert, and error states. Drag, snap, auto-arrange, and identify remain M3. Behavior contracts live in [architecture.md](architecture.md); scope lives in [product.md](product.md).
 
 ## Principles
 

@@ -25,6 +25,7 @@ type Backend struct {
 	versionErr error
 	delay      time.Duration
 	applyErrs  map[display.OutputID]error
+	applyOnce  map[display.OutputID]error
 	applyFunc  func(display.Change) error
 	calls      []Call
 	closed     bool
@@ -99,6 +100,10 @@ func (b *Backend) Apply(ctx context.Context, change display.Change) error {
 	if err := b.applyErrs[change.Before.ID]; err != nil {
 		return err
 	}
+	if err := b.applyOnce[change.Before.ID]; err != nil {
+		delete(b.applyOnce, change.Before.ID)
+		return err
+	}
 
 	found := false
 	for i := range b.outputs {
@@ -166,6 +171,15 @@ func (b *Backend) SetApplyError(id display.OutputID, err error) {
 		b.applyErrs = make(map[display.OutputID]error)
 	}
 	b.applyErrs[id] = err
+}
+
+func (b *Backend) SetApplyErrorOnce(id display.OutputID, err error) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	if b.applyOnce == nil {
+		b.applyOnce = make(map[display.OutputID]error)
+	}
+	b.applyOnce[id] = err
 }
 
 func (b *Backend) SetApplyFunc(fn func(display.Change) error) {

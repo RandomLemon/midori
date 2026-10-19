@@ -46,7 +46,7 @@ Docs to update: [development.md](development.md) if commands differ, [README.md]
 
 ## M2 Inspector and apply/revert
 
-Status: UI not started. Service apply/revert and niri apply actions already exist and are tested; the editing UI and confirmation are next.
+Status: complete.
 
 Work:
 
@@ -68,6 +68,8 @@ Acceptance criteria:
 Docs to update: [ui.md](ui.md) if copy or control order changes, [architecture.md](architecture.md) if the transaction changes, [README.md](README.md) status.
 
 ## M3 Arrangement editor
+
+Status: not started; next milestone.
 
 Work:
 

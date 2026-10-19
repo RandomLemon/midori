@@ -2,7 +2,7 @@
 
 Exact niri IPC integration contract: discovery, wire framing, JSON mapping, apply order, and limitations.
 
-Status: Design draft. M1 implements Outputs, Version, and the apply actions with fake-socket tests. The read-only UI uses Outputs and Version; apply is not exposed yet. Backend behavior is invoked by the transaction in [../architecture.md](../architecture.md). Product scope is in [../product.md](../product.md).
+Status: Design draft. M2 uses Outputs, Version, and the apply actions through the service transaction. Fake-socket tests cover the wire format and action order. Backend behavior is invoked by the transaction in [../architecture.md](../architecture.md). Product scope is in [../product.md](../product.md).
 
 ## Scope and compatibility
 

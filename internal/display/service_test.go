@@ -207,6 +207,9 @@ func TestApplyRollsBackPartialFailure(t *testing.T) {
 	if err == nil {
 		t.Fatal("Apply() error = nil, want failure")
 	}
+	if !display.IsRollbackFailure(err) {
+		t.Fatalf("Apply() error = %v, want rollback failure", err)
+	}
 	if !strings.Contains(err.Error(), "eDP-1") {
 		t.Fatalf("error = %v, want failing output", err)
 	}
@@ -309,5 +312,104 @@ func TestApplyRejectsConcurrentTransaction(t *testing.T) {
 	close(release)
 	if err := <-done; err != nil {
 		t.Fatalf("first Apply() error = %v", err)
+	}
+}
+
+func TestApplyRollbackSucceedsAfterTransientFailure(t *testing.T) {
+	outputs := testOutputs()
+	backend := fakebackend.New(outputs...)
+	backend.SetApplyErrorOnce("eDP-1", errors.New("reject once"))
+	service := display.NewService(backend)
+
+	edp := target(outputs, "eDP-1")
+	edp.Scale = 1.25
+	hdmi := target(outputs, "HDMI-A-1")
+	hdmi.Scale = 1.75
+
+	_, err := service.Apply(context.Background(), map[display.OutputID]display.OutputState{
+		"eDP-1":    edp,
+		"HDMI-A-1": hdmi,
+	})
+	if err == nil {
+		t.Fatal("Apply() error = nil, want failure")
+	}
+	if display.IsRollbackFailure(err) {
+		t.Fatalf("Apply() reported rollback failure after successful rollback: %v", err)
+	}
+	snapshot, loadErr := service.Load(context.Background())
+	if loadErr != nil {
+		t.Fatalf("Load() error = %v", loadErr)
+	}
+	for _, id := range []display.OutputID{"eDP-1", "HDMI-A-1"} {
+		got, _ := snapshot.Output(id)
+		want, _ := display.Snapshot{Outputs: outputs}.Output(id)
+		if got.Scale != want.Scale {
+			t.Fatalf("%s scale = %v, want restored %v", id, got.Scale, want.Scale)
+		}
+	}
+}
+
+func TestValidateDraft(t *testing.T) {
+	outputs := testOutputs()
+	caps := display.Capabilities{Apply: true, VRR: true}
+	if err := display.ValidateDraft(caps, display.Snapshot{Outputs: outputs}, outputs); err != nil {
+		t.Fatalf("ValidateDraft() error = %v", err)
+	}
+
+	overlap := cloneTestOutputs(outputs)
+	overlap[0].Position = display.Point{X: 1000, Y: 0}
+	if err := display.ValidateDraft(caps, display.Snapshot{Outputs: outputs}, overlap); !errors.Is(err, display.ErrInvalidConfiguration) {
+		t.Fatalf("ValidateDraft(overlap) error = %v, want ErrInvalidConfiguration", err)
+	}
+
+	allDisabled := cloneTestOutputs(outputs)
+	allDisabled[0].Enabled = false
+	allDisabled[1].Enabled = false
+	if err := display.ValidateDraft(caps, display.Snapshot{Outputs: outputs}, allDisabled); !errors.Is(err, display.ErrInvalidConfiguration) {
+		t.Fatalf("ValidateDraft(all disabled) error = %v, want ErrInvalidConfiguration", err)
+	}
+}
+
+func cloneTestOutputs(outputs []display.Output) []display.Output {
+	cloned := make([]display.Output, len(outputs))
+	copy(cloned, outputs)
+	for index := range cloned {
+		cloned[index].Modes = append([]display.Mode(nil), outputs[index].Modes...)
+	}
+	return cloned
+}
+
+func TestValidateDraftCustomMode(t *testing.T) {
+	custom := display.Mode{Width: 2560, Height: 1440, RefreshMilliHz: 143912}
+	advertised := display.Mode{Width: 1920, Height: 1080, RefreshMilliHz: 60000, Preferred: true}
+	current := display.Output{
+		ID:           "DP-1",
+		Name:         "DP-1",
+		IsCustomMode: true,
+		Modes:        []display.Mode{advertised},
+		OutputState: display.OutputState{
+			Enabled: true,
+			Mode:    custom,
+			Scale:   1,
+		},
+	}
+	snapshot := display.Snapshot{Outputs: []display.Output{current}}
+	caps := display.Capabilities{Apply: true, VRR: true}
+
+	unchanged := cloneTestOutputs([]display.Output{current})
+	if err := display.ValidateDraft(caps, snapshot, unchanged); err != nil {
+		t.Fatalf("unchanged custom mode rejected: %v", err)
+	}
+
+	changed := cloneTestOutputs([]display.Output{current})
+	changed[0].Mode = advertised
+	if err := display.ValidateDraft(caps, snapshot, changed); err != nil {
+		t.Fatalf("advertised mode rejected: %v", err)
+	}
+
+	arbitrary := cloneTestOutputs([]display.Output{current})
+	arbitrary[0].Mode = display.Mode{Width: 800, Height: 600, RefreshMilliHz: 60000}
+	if err := display.ValidateDraft(caps, snapshot, arbitrary); !errors.Is(err, display.ErrInvalidConfiguration) {
+		t.Fatalf("arbitrary custom mode error = %v, want ErrInvalidConfiguration", err)
 	}
 }
