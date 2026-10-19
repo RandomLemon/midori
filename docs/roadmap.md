@@ -91,7 +91,7 @@ Docs to update: [ui.md](ui.md), [architecture.md](architecture.md) if layout mat
 
 ## M4 Robustness
 
-Status: not started; next milestone.
+Status: complete.
 
 Work:
 
@@ -113,6 +113,8 @@ Acceptance criteria:
 Docs to update: [ui.md](ui.md) for any state copy changes, [development.md](development.md) for the manual matrix, [architecture.md](architecture.md) for polling changes.
 
 ## M5 Packaging
+
+Status: not started; next milestone.
 
 Work:
 

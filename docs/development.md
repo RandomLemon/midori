@@ -2,7 +2,7 @@
 
 How to build, test, and extend Midori, including toolchain, dependencies, test strategy, CI, and packaging.
 
-Status: M3 implemented. The commands below are active for the current module. See [architecture.md](architecture.md) for package contracts and [AGENTS.md](../AGENTS.md) for agent rules.
+Status: M4 implemented. The commands below are active for the current module. See [architecture.md](architecture.md) for package contracts and [AGENTS.md](../AGENTS.md) for agent rules.
 
 ## Toolchain
 
@@ -132,6 +132,8 @@ Service and controller tests with `fakebackend`:
 - Successful apply, including the `After` snapshot and `Changed` list.
 - Partial failure with successful rollback.
 - Partial failure with failed rollback, leading to `Recovering`.
+- Apply cancellation with successful rollback after close.
+- Hotplug fingerprint changes, dirty-draft discard, and reconnect from `Unavailable`.
 - Confirmation timeout.
 - Window close during `Confirming`, `Applying`, and `Reverting`.
 - No-op apply rejection.
@@ -202,7 +204,7 @@ Manual matrix for backend or UI changes:
 - `--debug` sets the level to debug on stderr; the default level is info.
 - Log backend selection, operation name, duration, and output names at debug level.
 - Never log raw compositor configuration or serial numbers.
-- A debug dump includes the selected backend ID, its version or `unknown`, the output count, and the poll fingerprint state.
+- A debug dump includes the selected backend ID, its version or `unknown`, the output count, and the poll fingerprint state. Poll changes, reconnect attempts, and connection-loss transitions are logged at debug level.
 
 ## CI
 

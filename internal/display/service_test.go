@@ -4,11 +4,67 @@ import (
 	"context"
 	"errors"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/RandomLemon/midori/internal/display"
 	"github.com/RandomLemon/midori/internal/testutil/fakebackend"
 )
+
+type cancelRollbackBackend struct {
+	mu      sync.Mutex
+	outputs []display.Output
+	blockID display.OutputID
+	started chan struct{}
+	blocked bool
+}
+
+func (b *cancelRollbackBackend) ID() string          { return "cancel-test" }
+func (b *cancelRollbackBackend) DisplayName() string { return "Cancel test" }
+func (b *cancelRollbackBackend) Version(context.Context) (string, error) {
+	return "test", nil
+}
+func (b *cancelRollbackBackend) Capabilities() display.Capabilities {
+	return display.Capabilities{Apply: true, VRR: true}
+}
+func (b *cancelRollbackBackend) Close() error { return nil }
+
+func (b *cancelRollbackBackend) Outputs(context.Context) ([]display.Output, error) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return cloneTestOutputs(b.outputs), nil
+}
+
+func (b *cancelRollbackBackend) Apply(ctx context.Context, change display.Change) error {
+	b.mu.Lock()
+	block := change.Before.ID == b.blockID && !b.blocked
+	if block {
+		b.blocked = true
+	}
+	b.mu.Unlock()
+	if block {
+		close(b.started)
+		<-ctx.Done()
+		return ctx.Err()
+	}
+
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	for index := range b.outputs {
+		if b.outputs[index].ID != change.Before.ID {
+			continue
+		}
+		if change.After.Enabled {
+			b.outputs[index].OutputState = change.After
+			b.outputs[index].LogicalSize = display.LogicalSize(change.After.Mode, change.After.Scale, change.After.Transform)
+		} else {
+			b.outputs[index].OutputState = display.OutputState{Enabled: false}
+			b.outputs[index].LogicalSize = display.Size{}
+		}
+		return nil
+	}
+	return display.ErrOutputMissing
+}
 
 func testOutputs() []display.Output {
 	edpMode := display.Mode{Width: 1920, Height: 1200, RefreshMilliHz: 60000, Preferred: true}
@@ -231,6 +287,53 @@ func TestApplyRollsBackPartialFailure(t *testing.T) {
 	}
 	if applies != 4 {
 		t.Fatalf("apply calls = %d, want 4 (two attempts plus rollback of both): %+v", applies, calls)
+	}
+}
+
+func TestApplyRollbackSurvivesCancellation(t *testing.T) {
+	outputs := testOutputs()
+	backend := &cancelRollbackBackend{
+		outputs: outputs,
+		blockID: "eDP-1",
+		started: make(chan struct{}),
+	}
+	service := display.NewService(backend)
+
+	edp := target(outputs, "eDP-1")
+	edp.Scale = 1.25
+	hdmi := target(outputs, "HDMI-A-1")
+	hdmi.Scale = 1.75
+	targets := map[display.OutputID]display.OutputState{
+		"eDP-1":    edp,
+		"HDMI-A-1": hdmi,
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan error, 1)
+	go func() {
+		_, err := service.Apply(ctx, targets)
+		done <- err
+	}()
+	<-backend.started
+	cancel()
+
+	err := <-done
+	if err == nil {
+		t.Fatal("Apply() error = nil, want cancellation failure")
+	}
+	if display.IsRollbackFailure(err) {
+		t.Fatalf("rollback failed after cancellation: %v", err)
+	}
+	restored, loadErr := backend.Outputs(context.Background())
+	if loadErr != nil {
+		t.Fatalf("Outputs() error = %v", loadErr)
+	}
+	for _, id := range []display.OutputID{"eDP-1", "HDMI-A-1"} {
+		got, _ := display.Snapshot{Outputs: restored}.Output(id)
+		want, _ := display.Snapshot{Outputs: outputs}.Output(id)
+		if got.Scale != want.Scale {
+			t.Fatalf("%s scale after canceled apply = %v, want %v", id, got.Scale, want.Scale)
+		}
 	}
 }
 

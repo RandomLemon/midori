@@ -131,6 +131,17 @@ func TestWindowUnsupportedAndLostConnection(t *testing.T) {
 	if !window.refreshButton.Disabled() {
 		t.Fatal("refresh should be disabled while unavailable")
 	}
+
+	window.ShowRecovering()
+	if window.mainView.Visible() || !window.unsupportedView.Visible() {
+		t.Fatal("recovering state should show the error view")
+	}
+	if window.errorTitle.Text != "The display configuration could not be restored." {
+		t.Fatalf("recovering title = %q", window.errorTitle.Text)
+	}
+	if window.retryButton.Disabled() {
+		t.Fatal("retry button should be enabled while recovering")
+	}
 }
 
 func TestCanvasLayoutUsesLogicalCoordinates(t *testing.T) {

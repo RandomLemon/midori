@@ -2,7 +2,7 @@
 
 The implementation contract for Midori: package boundaries, domain types, the backend interface, the apply and revert transaction, validation, layout math, and failure handling.
 
-Status: Design draft. M3 implements the editable inspector, the apply/confirmation/revert transaction, and the arrangement editor with drag, snapping, overlap rejection, auto-arrange, and identify overlays. Hyprland remains future work. This document is authoritative for types and behavior. Product scope is in [product.md](product.md); interaction details are in [ui.md](ui.md).
+Status: Design draft. M4 implements the editable inspector, the apply/confirmation/revert transaction, the arrangement editor, hotplug polling, connection-loss and recovery states, close-time rollback, and bounded IPC diagnostics. Hyprland remains future work. This document is authoritative for types and behavior. Product scope is in [product.md](product.md); interaction details are in [ui.md](ui.md).
 
 ## Context and constraints
 
@@ -246,6 +246,7 @@ States: `Unavailable`, `Loading`, `Ready`, `Dirty`, `Applying`, `Confirming`, `R
 | Unavailable | Retry | Loading | Start a load; show the loading state. |
 | Loading | Load succeeds | Ready | Replace the snapshot; clear the draft; enable editing. |
 | Loading | Load fails | Unavailable | Show the mapped error and `Retry`; keep editing disabled. |
+| Unavailable | Poll succeeds | Ready | Replace the snapshot and draft; show the hotplug banner if a draft was discarded. |
 | Ready | Any edit | Dirty | Record the draft; enable `Reset` and `Apply`; validate. |
 | Dirty | Reset | Ready | Discard the draft; no backend calls. |
 | Dirty | Apply | Applying | Validate; start the transaction; disable controls. |
@@ -286,6 +287,7 @@ Rollback and revert semantics:
 
 - If rollback succeeds after a partial failure: reload, keep the draft, set `Dirty`, and show the error.
 - If rollback fails: set `Recovering`, keep the error, and offer retry/reload.
+- Rollback after an apply failure uses a context detached from the canceled apply context, so a close-triggered cancellation cannot abort restoration. Each backend call still has its own 5-second timeout.
 - A target output that disappeared before rollback is skipped and logged at debug level. This alone does not set `Recovering`, because there is no connected output to restore. The next poll reflects its actual state if it returns.
 - On `Revert`, apply `Before` for every output in `Changed` that is still present, sequentially, then reload. Missing outputs are skipped and logged at debug level. If any revert apply fails on a present output, set `Recovering`.
 
@@ -362,6 +364,7 @@ Preview:
   - `Dirty`: reload and discard the draft; show a non-blocking banner: `Display configuration changed. Pending edits were discarded.`
   - `Confirming`/`Reverting`: do not reload; finish the transaction, then refresh. If a changed output disappears, the revert path reports it.
 - Three consecutive poll failures move to `Unavailable`; transient single failures are ignored.
+- Polling continues in `Unavailable`. A successful poll returns to `Ready`; a pending draft is discarded and the hotplug banner is shown when the draft differed. A compositor restart that changes `$NIRI_SOCKET` still requires restarting Midori.
 - niri has no output topology event in its IPC event stream, so polling is required. Hyprland also uses polling to keep one code path.
 
 ## Persistence

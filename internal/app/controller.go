@@ -142,6 +142,7 @@ func (c *Controller) load(showLoading bool) {
 	}
 	go func() {
 		defer c.inFlight.Store(false)
+		started := time.Now()
 
 		ctx, cancel := context.WithTimeout(context.Background(), operationTimeout)
 		snapshot, loadErr := c.service.Load(ctx)
@@ -152,6 +153,18 @@ func (c *Controller) load(showLoading bool) {
 			versionCtx, versionCancel := context.WithTimeout(context.Background(), operationTimeout)
 			version, _ = c.backend.Version(versionCtx)
 			versionCancel()
+		}
+
+		if loadErr != nil {
+			slog.Debug("display load failed", "backend", c.backendID(), "duration", time.Since(started), "error", loadErr)
+		} else {
+			slog.Debug("display state loaded",
+				"backend", snapshot.Backend,
+				"version", version,
+				"outputs", len(snapshot.Outputs),
+				"duration", time.Since(started),
+				"fingerprint", fingerprint(snapshot),
+			)
 		}
 
 		select {
@@ -194,7 +207,6 @@ func (c *Controller) applyLoad(snapshot display.Snapshot, version string, err er
 	draft := cloneOutputs(c.draft)
 	c.mu.Unlock()
 
-	slog.Debug("display state loaded", "backend", snapshot.Backend, "outputs", len(snapshot.Outputs), "version", version)
 	if c.backend != nil {
 		c.view.SetBackend(c.backend.DisplayName(), version)
 		c.view.SetCapabilities(c.backend.Capabilities())
@@ -690,14 +702,16 @@ func (c *Controller) applyPoll(previous display.Snapshot, fresh display.Snapshot
 		}
 		c.mu.Unlock()
 		if failures >= 3 && state != StateUnavailable {
-			slog.Debug("display poll failed", "error", err)
+			slog.Debug("display connection lost", "backend", c.backendID(), "failures", failures, "error", err)
 			c.view.SetEditable(false)
 			c.view.SetDirty(false)
 			c.view.SetReady(false)
 			c.view.SetBusy(false)
 			c.view.SetStatus("Lost connection")
 			c.view.ShowLostConnection()
+			return
 		}
+		slog.Debug("display poll failed", "backend", c.backendID(), "failures", failures, "error", err)
 		return
 	}
 
@@ -705,6 +719,7 @@ func (c *Controller) applyPoll(previous display.Snapshot, fresh display.Snapshot
 	c.failures = 0
 	wasUnavailable := c.state == StateUnavailable
 	wasDirty := c.state == StateDirty
+	discardedDraft := wasDirty || (wasUnavailable && c.isDirty(c.draft, c.snapshot))
 	changed := fingerprint(previous) != fingerprint(fresh)
 	if !changed && !wasUnavailable {
 		c.mu.Unlock()
@@ -718,8 +733,19 @@ func (c *Controller) applyPoll(previous display.Snapshot, fresh display.Snapshot
 	draft := cloneOutputs(c.draft)
 	c.mu.Unlock()
 
+	if wasUnavailable {
+		slog.Debug("display connection restored", "backend", fresh.Backend, "outputs", len(fresh.Outputs))
+	}
+	if changed {
+		slog.Debug("display poll changed",
+			"backend", fresh.Backend,
+			"outputs", len(fresh.Outputs),
+			"discarded_draft", discardedDraft,
+			"fingerprint", fingerprint(fresh),
+		)
+	}
 	banner := ""
-	if wasDirty {
+	if discardedDraft {
 		banner = "Display configuration changed. Pending edits were discarded."
 	}
 	c.renderReady(draft, banner)
@@ -818,6 +844,13 @@ func (c *Controller) getState() State {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	return c.state
+}
+
+func (c *Controller) backendID() string {
+	if c.backend == nil {
+		return ""
+	}
+	return c.backend.ID()
 }
 
 func (c *Controller) setExitAfter(exit bool) {

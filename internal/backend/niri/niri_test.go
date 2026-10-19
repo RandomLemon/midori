@@ -307,11 +307,22 @@ func TestApplyOutputWasMissing(t *testing.T) {
 }
 
 func TestMalformedAndOversizedReplies(t *testing.T) {
-	t.Run("malformed", func(t *testing.T) {
+	t.Run("malformed envelope", func(t *testing.T) {
 		server := startTestServer(t, func(context.Context, string) string { return "not-json" })
 		backend := New(server.Config())
-		if _, err := backend.Version(context.Background()); err == nil {
-			t.Fatal("Version() error = nil, want malformed reply error")
+		_, err := backend.Version(context.Background())
+		if !errors.Is(err, display.ErrConnection) {
+			t.Fatalf("Version() error = %v, want ErrConnection", err)
+		}
+	})
+	t.Run("malformed payload", func(t *testing.T) {
+		server := startTestServer(t, func(context.Context, string) string {
+			return `{"Ok":{"Version":123}}`
+		})
+		backend := New(server.Config())
+		_, err := backend.Version(context.Background())
+		if !errors.Is(err, display.ErrUnsupported) {
+			t.Fatalf("Version() error = %v, want ErrUnsupported", err)
 		}
 	})
 	t.Run("oversized", func(t *testing.T) {
@@ -321,8 +332,9 @@ func TestMalformedAndOversizedReplies(t *testing.T) {
 		cfg := server.Config()
 		cfg.MaxReplyBytes = 32
 		backend := New(cfg)
-		if _, err := backend.Version(context.Background()); err == nil {
-			t.Fatal("Version() error = nil, want oversized reply error")
+		_, err := backend.Version(context.Background())
+		if !errors.Is(err, display.ErrConnection) {
+			t.Fatalf("Version() error = %v, want ErrConnection", err)
 		}
 	})
 }

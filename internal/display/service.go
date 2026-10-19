@@ -31,7 +31,22 @@ func NewService(backend Backend) *Service {
 }
 
 // Load reads the current compositor state.
-func (s *Service) Load(ctx context.Context) (Snapshot, error) {
+func (s *Service) Load(ctx context.Context) (snapshot Snapshot, err error) {
+	started := time.Now()
+	defer func() {
+		attrs := []any{
+			"backend", s.backendID(),
+			"duration", time.Since(started),
+		}
+		if err == nil {
+			attrs = append(attrs, "outputs", len(snapshot.Outputs), "names", outputNames(snapshot.Outputs))
+		}
+		if err != nil {
+			attrs = append(attrs, "error", err)
+		}
+		slog.Debug("display load", attrs...)
+	}()
+
 	if s.backend == nil {
 		return Snapshot{}, ErrNoBackend
 	}
@@ -56,7 +71,24 @@ func (s *Service) Refresh(ctx context.Context) (Snapshot, error) {
 
 // Apply validates and applies the target states, reloads, and returns a
 // transaction. On failure it attempts to roll back every attempted output.
-func (s *Service) Apply(ctx context.Context, targets map[OutputID]OutputState) (*Transaction, error) {
+func (s *Service) Apply(ctx context.Context, targets map[OutputID]OutputState) (tx *Transaction, err error) {
+	started := time.Now()
+	targetNames := targetOutputNames(targets)
+	defer func() {
+		attrs := []any{
+			"backend", s.backendID(),
+			"duration", time.Since(started),
+			"targets", targetNames,
+		}
+		if tx != nil {
+			attrs = append(attrs, "changed", outputIDNames(tx.Changed))
+		}
+		if err != nil {
+			attrs = append(attrs, "error", err)
+		}
+		slog.Debug("display apply", attrs...)
+	}()
+
 	if err := s.begin(); err != nil {
 		return nil, err
 	}
@@ -111,12 +143,16 @@ func (s *Service) Apply(ctx context.Context, targets map[OutputID]OutputState) (
 		return nil, invalid("", "targets", "no changes to apply")
 	}
 
+	// Rollback must survive cancellation of the caller's context: a window
+	// close cancels the in-flight apply, but the already-attempted outputs
+	// still need to be restored before the process exits.
+	rollbackCtx := context.WithoutCancel(ctx)
 	attempted := make([]Change, 0, len(changes))
 	for _, change := range changes {
 		attempted = append(attempted, change)
 		if err := s.applyChange(ctx, change); err != nil {
 			applyErr := fmt.Errorf("display: apply %s: %w", change.Before.ID, err)
-			if rollbackErr := s.rollback(ctx, attempted, desired); rollbackErr != nil {
+			if rollbackErr := s.rollback(rollbackCtx, attempted, desired); rollbackErr != nil {
 				return nil, &ApplyError{Err: applyErr, RollbackErr: rollbackErr}
 			}
 			return nil, applyErr
@@ -126,7 +162,7 @@ func (s *Service) Apply(ctx context.Context, targets map[OutputID]OutputState) (
 	after, err := s.Load(ctx)
 	if err != nil {
 		reloadErr := fmt.Errorf("display: reload after apply: %w", err)
-		if rollbackErr := s.rollback(ctx, attempted, desired); rollbackErr != nil {
+		if rollbackErr := s.rollback(rollbackCtx, attempted, desired); rollbackErr != nil {
 			return nil, &ApplyError{Err: reloadErr, RollbackErr: rollbackErr}
 		}
 		return nil, reloadErr
@@ -141,7 +177,20 @@ func (s *Service) Apply(ctx context.Context, targets map[OutputID]OutputState) (
 
 // Revert restores the states in before for every output that is still present
 // and differs from the current state.
-func (s *Service) Revert(ctx context.Context, before Snapshot) error {
+func (s *Service) Revert(ctx context.Context, before Snapshot) (err error) {
+	started := time.Now()
+	defer func() {
+		attrs := []any{
+			"backend", s.backendID(),
+			"duration", time.Since(started),
+			"outputs", outputNames(before.Outputs),
+		}
+		if err != nil {
+			attrs = append(attrs, "error", err)
+		}
+		slog.Debug("display revert", attrs...)
+	}()
+
 	if err := s.begin(); err != nil {
 		return err
 	}
@@ -374,4 +423,40 @@ func (s *Service) applyChange(ctx context.Context, change Change) error {
 	opCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
 	return s.backend.Apply(opCtx, change)
+}
+
+func (s *Service) backendID() string {
+	if s.backend == nil {
+		return ""
+	}
+	return s.backend.ID()
+}
+
+func outputNames(outputs []Output) []string {
+	names := make([]string, 0, len(outputs))
+	for _, output := range outputs {
+		name := output.Name
+		if name == "" {
+			name = string(output.ID)
+		}
+		names = append(names, name)
+	}
+	return names
+}
+
+func targetOutputNames(targets map[OutputID]OutputState) []string {
+	names := make([]string, 0, len(targets))
+	for id := range targets {
+		names = append(names, string(id))
+	}
+	sort.Strings(names)
+	return names
+}
+
+func outputIDNames(ids []OutputID) []string {
+	names := make([]string, 0, len(ids))
+	for _, id := range ids {
+		names = append(names, string(id))
+	}
+	return names
 }

@@ -46,11 +46,15 @@ func TestApplyLoadAndPollTransitions(t *testing.T) {
 		t.Fatalf("state = %v, want Ready", got)
 	}
 
-	for range 3 {
+	for failure := 1; failure <= 3; failure++ {
 		controller.applyPoll(snapshot, snapshot, errors.New("poll failed"))
-	}
-	if got := controllerState(controller); got != StateUnavailable {
-		t.Fatalf("state after three failures = %v, want Unavailable", got)
+		want := StateReady
+		if failure == 3 {
+			want = StateUnavailable
+		}
+		if got := controllerState(controller); got != want {
+			t.Fatalf("state after %d failures = %v, want %v", failure, got, want)
+		}
 	}
 
 	controller.applyPoll(snapshot, snapshot, nil)
@@ -60,15 +64,126 @@ func TestApplyLoadAndPollTransitions(t *testing.T) {
 }
 
 func TestFingerprintTracksState(t *testing.T) {
-	outputs := controllerTestOutputs()
-	first := fingerprint(display.Snapshot{Outputs: outputs})
-	if first != fingerprint(display.Snapshot{Outputs: outputs}) {
+	base := controllerTestOutputs()
+	first := fingerprint(display.Snapshot{Outputs: base})
+	if first != fingerprint(display.Snapshot{Outputs: base}) {
 		t.Fatal("identical snapshots have different fingerprints")
 	}
-	outputs[0].Scale = 1.25
-	second := fingerprint(display.Snapshot{Outputs: outputs})
-	if first == second {
-		t.Fatal("scale change did not change fingerprint")
+	tests := []struct {
+		name   string
+		mutate func(*display.Output)
+	}{
+		{name: "enabled", mutate: func(output *display.Output) { output.Enabled = false }},
+		{name: "mode width", mutate: func(output *display.Output) { output.Mode.Width = 1280 }},
+		{name: "mode height", mutate: func(output *display.Output) { output.Mode.Height = 720 }},
+		{name: "refresh", mutate: func(output *display.Output) { output.Mode.RefreshMilliHz = 50000 }},
+		{name: "scale", mutate: func(output *display.Output) { output.Scale = 1.25 }},
+		{name: "transform", mutate: func(output *display.Output) { output.Transform = display.Transform90 }},
+		{name: "position", mutate: func(output *display.Output) { output.Position = display.Point{X: 10, Y: 20} }},
+		{name: "vrr", mutate: func(output *display.Output) { output.VRR = true }},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			outputs := controllerTestOutputs()
+			tt.mutate(&outputs[0])
+			if got := fingerprint(display.Snapshot{Outputs: outputs}); got == first {
+				t.Fatalf("%s change did not change fingerprint", tt.name)
+			}
+		})
+	}
+}
+
+func TestPollDiscardsDirtyDraftOnChange(t *testing.T) {
+	controller, backend := newTestControllerWithOutputs(t, controllerPairOutputs()...)
+	state := controllerPairOutputs()[0].OutputState
+	state.Scale = 1.25
+	controller.EditOutput("DP-1", state)
+	if got := controllerState(controller); got != StateDirty {
+		t.Fatalf("state = %v, want Dirty", got)
+	}
+	previous := controller.snapshot
+
+	backend.SetOutputs(controllerPairOutputs()[0])
+	fresh, err := controller.loadSnapshot()
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	controller.applyPoll(previous, fresh, nil)
+	if got := controllerState(controller); got != StateReady {
+		t.Fatalf("state after hotplug = %v, want Ready", got)
+	}
+	if len(controller.snapshot.Outputs) != 1 || len(controller.draft) != 1 {
+		t.Fatalf("snapshot/draft after unplug = %d/%d, want 1/1",
+			len(controller.snapshot.Outputs), len(controller.draft))
+	}
+	draft, _ := findDraft(controller, "DP-1")
+	if draft.Scale != 1 {
+		t.Fatalf("draft scale after hotplug = %v, want discarded to 1", draft.Scale)
+	}
+
+	previous = controller.snapshot
+	backend.SetOutputs(controllerPairOutputs()...)
+	fresh, err = controller.loadSnapshot()
+	if err != nil {
+		t.Fatalf("Load() after replug error = %v", err)
+	}
+	controller.applyPoll(previous, fresh, nil)
+	if got := controllerState(controller); got != StateReady {
+		t.Fatalf("state after replug = %v, want Ready", got)
+	}
+	if len(controller.snapshot.Outputs) != 2 || len(controller.draft) != 2 {
+		t.Fatalf("snapshot/draft after replug = %d/%d, want 2/2",
+			len(controller.snapshot.Outputs), len(controller.draft))
+	}
+}
+
+func TestUnchangedPollKeepsDraft(t *testing.T) {
+	controller, _ := newTestController(t)
+	state := controllerTestOutputs()[0].OutputState
+	state.Scale = 1.25
+	controller.EditOutput("eDP-1", state)
+
+	controller.applyPoll(controller.snapshot, controller.snapshot, nil)
+	if got := controllerState(controller); got != StateDirty {
+		t.Fatalf("state after unchanged poll = %v, want Dirty", got)
+	}
+	draft, _ := findDraft(controller, "eDP-1")
+	if draft.Scale != 1.25 {
+		t.Fatalf("draft scale after unchanged poll = %v, want 1.25", draft.Scale)
+	}
+}
+
+func TestPollSkipsTransactions(t *testing.T) {
+	controller, backend := newTestController(t)
+	before := len(backend.Calls())
+	for _, state := range []State{StateLoading, StateApplying, StateConfirming, StateReverting, StateRecovering} {
+		controller.setState(state)
+		controller.poll()
+		if got := len(backend.Calls()); got != before {
+			t.Fatalf("poll contacted the backend in state %v: calls %d -> %d", state, before, got)
+		}
+	}
+}
+
+func TestNoOutputSnapshotEntersReadyState(t *testing.T) {
+	fyneApp := test.NewApp()
+	defer fyneApp.Quit()
+	view := ui.New(fyneApp, ui.Callbacks{})
+	backend := fakebackend.New()
+	service := display.NewService(backend)
+	controller := New(backend, service, view)
+
+	snapshot, err := service.Load(context.Background())
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	controller.applyLoad(snapshot, "test", nil)
+	if got := controllerState(controller); got != StateReady {
+		t.Fatalf("state = %v, want Ready", got)
+	}
+	if len(controller.snapshot.Outputs) != 0 || len(controller.draft) != 0 {
+		t.Fatalf("no-output snapshot/draft = %d/%d, want 0/0",
+			len(controller.snapshot.Outputs), len(controller.draft))
 	}
 }
 
