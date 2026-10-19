@@ -2,7 +2,7 @@
 
 How to build, test, and extend Midori, including toolchain, dependencies, test strategy, CI, and packaging.
 
-Status: M2 implemented. The commands below are active for the current module. See [architecture.md](architecture.md) for package contracts and [AGENTS.md](../AGENTS.md) for agent rules.
+Status: M3 implemented. The commands below are active for the current module. See [architecture.md](architecture.md) for package contracts and [AGENTS.md](../AGENTS.md) for agent rules.
 
 ## Toolchain
 
@@ -173,6 +173,8 @@ Manual matrix for backend or UI changes:
 - Config reload during the confirmation countdown.
 - Window close during apply.
 - Invalid mode selection.
+- Drag with edge snapping, numeric X/Y synchronization, and overlapping-drop rejection.
+- Auto arrange into a gap-free row and identify overlays that disappear after 3 seconds.
 - Socket loss and niri restart.
 - Malformed reply from a fake server.
 

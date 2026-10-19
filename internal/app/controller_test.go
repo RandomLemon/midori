@@ -80,10 +80,15 @@ func controllerState(c *Controller) State {
 
 func newTestController(t *testing.T) (*Controller, *fakebackend.Backend) {
 	t.Helper()
+	return newTestControllerWithOutputs(t, controllerTestOutputs()...)
+}
+
+func newTestControllerWithOutputs(t *testing.T, outputs ...display.Output) (*Controller, *fakebackend.Backend) {
+	t.Helper()
 	fyneApp := test.NewApp()
 	t.Cleanup(fyneApp.Quit)
 	view := ui.New(fyneApp, ui.Callbacks{})
-	backend := fakebackend.New(controllerTestOutputs()...)
+	backend := fakebackend.New(outputs...)
 	service := display.NewService(backend)
 	controller := New(backend, service, view)
 	snapshot, err := service.Load(context.Background())
@@ -95,6 +100,103 @@ func newTestController(t *testing.T) (*Controller, *fakebackend.Backend) {
 		t.Fatalf("initial state = %v, want Ready", got)
 	}
 	return controller, backend
+}
+
+func controllerPairOutputs() []display.Output {
+	mode := display.Mode{Width: 1920, Height: 1080, RefreshMilliHz: 60000, Preferred: true}
+	return []display.Output{
+		{
+			ID:          "DP-1",
+			Name:        "DP-1",
+			Modes:       []display.Mode{mode},
+			LogicalSize: display.Size{Width: 1920, Height: 1080},
+			OutputState: display.OutputState{
+				Enabled:   true,
+				Mode:      mode,
+				Scale:     1,
+				Transform: display.TransformNormal,
+				Position:  display.Point{X: 0, Y: 0},
+			},
+		},
+		{
+			ID:          "DP-2",
+			Name:        "DP-2",
+			Modes:       []display.Mode{mode},
+			LogicalSize: display.Size{Width: 1920, Height: 1080},
+			OutputState: display.OutputState{
+				Enabled:   true,
+				Mode:      mode,
+				Scale:     1,
+				Transform: display.TransformNormal,
+				Position:  display.Point{X: 2500, Y: 40},
+			},
+		},
+	}
+}
+
+func TestAutoArrangeBuildsGapFreeRow(t *testing.T) {
+	controller, _ := newTestControllerWithOutputs(t, controllerPairOutputs()...)
+	controller.AutoArrange()
+	if got := controllerState(controller); got != StateDirty {
+		t.Fatalf("state = %v, want Dirty", got)
+	}
+
+	first, ok := findDraft(controller, "DP-1")
+	if !ok {
+		t.Fatal("DP-1 missing from draft")
+	}
+	second, ok := findDraft(controller, "DP-2")
+	if !ok {
+		t.Fatal("DP-2 missing from draft")
+	}
+	if first.Position != (display.Point{X: 0, Y: 0}) {
+		t.Fatalf("DP-1 position = %+v, want 0,0", first.Position)
+	}
+	if second.Position != (display.Point{X: 1920, Y: 0}) {
+		t.Fatalf("DP-2 position = %+v, want 1920,0", second.Position)
+	}
+	validation := display.ValidateDraft(controller.backend.Capabilities(), controller.snapshot, controller.draft)
+	if validation != nil {
+		t.Fatalf("arranged draft is invalid: %v", validation)
+	}
+}
+
+func TestArrangedPositionsApplyAndRevert(t *testing.T) {
+	controller, backend := newTestControllerWithOutputs(t, controllerPairOutputs()...)
+	controller.AutoArrange()
+
+	targets := map[display.OutputID]display.OutputState{}
+	for _, output := range controller.draft {
+		targets[output.ID] = output.OutputState
+	}
+	tx, err := controller.service.Apply(context.Background(), targets)
+	if err != nil {
+		t.Fatalf("Apply() error = %v", err)
+	}
+	controller.finishApply(tx, nil, display.Snapshot{}, nil)
+	if got := controllerState(controller); got != StateConfirming {
+		t.Fatalf("state = %v, want Confirming", got)
+	}
+
+	applied, err := backend.Outputs(context.Background())
+	if err != nil {
+		t.Fatalf("Outputs() error = %v", err)
+	}
+	if applied[1].Position != (display.Point{X: 1920, Y: 0}) {
+		t.Fatalf("applied position = %+v, want 1920,0", applied[1].Position)
+	}
+
+	controller.RevertNow()
+	waitForState(t, controller, StateReverting, 3*time.Second)
+	waitForState(t, controller, StateReady, 3*time.Second)
+
+	reverted, err := backend.Outputs(context.Background())
+	if err != nil {
+		t.Fatalf("Outputs() error = %v", err)
+	}
+	if reverted[1].Position != (display.Point{X: 2500, Y: 40}) {
+		t.Fatalf("reverted position = %+v, want 2500,40", reverted[1].Position)
+	}
 }
 
 func waitForState(t *testing.T, controller *Controller, want State, timeout time.Duration) {

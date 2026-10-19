@@ -49,6 +49,131 @@ func TestBoundsEmpty(t *testing.T) {
 	}
 }
 
+func TestSnapPosition(t *testing.T) {
+	size := display.Size{Width: 1920, Height: 1080}
+	tests := []struct {
+		name      string
+		position  display.Point
+		size      display.Size
+		obstacles []display.Rect
+		threshold int
+		want      display.Point
+	}{
+		{
+			name:      "snap to obstacle right edge",
+			position:  display.Point{X: 1915, Y: 0},
+			size:      size,
+			obstacles: []display.Rect{{X: 0, Y: 0, Width: 1920, Height: 1080}},
+			threshold: 12,
+			want:      display.Point{X: 1920, Y: 0},
+		},
+		{
+			name:      "snap to obstacle left edge",
+			position:  display.Point{X: 5, Y: 0},
+			size:      size,
+			obstacles: []display.Rect{{X: 1920, Y: 0, Width: 1920, Height: 1080}},
+			threshold: 12,
+			want:      display.Point{X: 0, Y: 0},
+		},
+		{
+			name:      "outside threshold",
+			position:  display.Point{X: 1907, Y: 0},
+			size:      size,
+			obstacles: []display.Rect{{X: 0, Y: 0, Width: 1920, Height: 1080}},
+			threshold: 12,
+			want:      display.Point{X: 1907, Y: 0},
+		},
+		{
+			name:      "snap vertical edge",
+			position:  display.Point{X: 500, Y: 105},
+			size:      display.Size{Width: 100, Height: 100},
+			obstacles: []display.Rect{{X: 0, Y: 0, Width: 1000, Height: 100}},
+			threshold: 12,
+			want:      display.Point{X: 500, Y: 100},
+		},
+		{
+			name:      "reject overlapping snap",
+			position:  display.Point{X: 205, Y: 0},
+			size:      display.Size{Width: 100, Height: 100},
+			obstacles: []display.Rect{{X: 100, Y: 0, Width: 200, Height: 100}},
+			threshold: 12,
+			want:      display.Point{X: 205, Y: 0},
+		},
+		{
+			name:      "disabled threshold",
+			position:  display.Point{X: 1915, Y: 0},
+			size:      size,
+			obstacles: []display.Rect{{X: 1920, Y: 0, Width: 1920, Height: 1080}},
+			threshold: 0,
+			want:      display.Point{X: 1915, Y: 0},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := SnapPosition(tt.position, tt.size, tt.obstacles, tt.threshold)
+			if got != tt.want {
+				t.Fatalf("SnapPosition() = %+v, want %+v", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestAutoArrange(t *testing.T) {
+	outputs := []display.Output{
+		{
+			ID:   "HDMI-A-1",
+			Name: "HDMI-A-1",
+			OutputState: display.OutputState{
+				Enabled:   true,
+				Mode:      display.Mode{Width: 1920, Height: 1080},
+				Scale:     1,
+				Transform: display.TransformNormal,
+				Position:  display.Point{X: 500, Y: 10},
+			},
+		},
+		{
+			ID:   "DP-2",
+			Name: "DP-2",
+			OutputState: display.OutputState{
+				Enabled:   true,
+				Mode:      display.Mode{Width: 2560, Height: 1440},
+				Scale:     2,
+				Transform: display.TransformNormal,
+				Position:  display.Point{X: 0, Y: 10},
+			},
+		},
+		{
+			ID:   "eDP-1",
+			Name: "eDP-1",
+			OutputState: display.OutputState{
+				Enabled:  false,
+				Position: display.Point{X: 77, Y: 88},
+			},
+		},
+	}
+	got := AutoArrange(outputs)
+
+	wantPositions := map[display.OutputID]display.Point{
+		"DP-2":     {X: 0, Y: 0},
+		"HDMI-A-1": {X: 1280, Y: 0},
+		"eDP-1":    {X: 77, Y: 88},
+	}
+	for _, output := range got {
+		if want := wantPositions[output.ID]; output.Position != want {
+			t.Errorf("%s position = %+v, want %+v", output.ID, output.Position, want)
+		}
+	}
+	dp := got[1]
+	hdmi := got[0]
+	if dp.Position.X+dp.LogicalSize.Width != hdmi.Position.X {
+		t.Fatalf("row has a gap: DP ends at %d, HDMI starts at %d",
+			dp.Position.X+dp.LogicalSize.Width, hdmi.Position.X)
+	}
+	if outputs[0].Position.X != 500 || outputs[1].Position.X != 0 {
+		t.Fatal("AutoArrange mutated its input")
+	}
+}
+
 func TestZoom(t *testing.T) {
 	tests := []struct {
 		name                      string

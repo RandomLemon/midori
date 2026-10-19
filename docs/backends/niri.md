@@ -2,7 +2,7 @@
 
 Exact niri IPC integration contract: discovery, wire framing, JSON mapping, apply order, and limitations.
 
-Status: Design draft. M2 uses Outputs, Version, and the apply actions through the service transaction. Fake-socket tests cover the wire format and action order. Backend behavior is invoked by the transaction in [../architecture.md](../architecture.md). Product scope is in [../product.md](../product.md).
+Status: Design draft. The backend uses Outputs, Version, and the apply actions through the service transaction. Fake-socket tests cover the wire format and action order. Backend behavior is invoked by the transaction in [../architecture.md](../architecture.md). Product scope is in [../product.md](../product.md).
 
 ## Scope and compatibility
 

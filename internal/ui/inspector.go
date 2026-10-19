@@ -148,6 +148,38 @@ func (i *inspector) Selected() display.OutputID {
 	return i.selected
 }
 
+// SetPosition records a canvas drag result in the draft and refreshes the
+// numeric position entries only when the drag ends.
+func (i *inspector) SetPosition(id display.OutputID, position display.Point) {
+	if !i.editing {
+		return
+	}
+	for index := range i.outputs {
+		if i.outputs[index].ID != id {
+			continue
+		}
+		i.outputs[index].Position = position
+		if i.outputs[index].Enabled {
+			i.outputs[index].LogicalSize = display.LogicalSize(
+				i.outputs[index].Mode,
+				i.outputs[index].Scale,
+				i.outputs[index].Transform,
+			)
+		}
+		if id == i.selected {
+			i.positionInvalid = false
+			i.updating = true
+			i.posX.SetText(strconv.Itoa(position.X))
+			i.posY.SetText(strconv.Itoa(position.Y))
+			i.updating = false
+		}
+		if i.onEdit != nil {
+			i.onEdit(id, i.outputs[index].OutputState)
+		}
+		return
+	}
+}
+
 func (i *inspector) SetEditable(editable bool) {
 	i.editing = editable
 	i.applyEditable()
@@ -553,13 +585,6 @@ func (i *inspector) outputsForSelected() *display.Output {
 		return &output
 	}
 	return nil
-}
-
-func (i *inspector) EmitSelected() {
-	output, ok := i.find(i.selected)
-	if ok && i.onEdit != nil {
-		i.onEdit(output.ID, output.OutputState)
-	}
 }
 
 func (i *inspector) find(id display.OutputID) (display.Output, bool) {

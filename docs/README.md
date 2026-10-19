@@ -2,7 +2,7 @@
 
 Documentation index for Midori, a Linux/Wayland desktop GUI that inspects and changes display configuration under niri, with a backend boundary for future compositors.
 
-Status: Design draft. M2 is implemented: module skeleton, niri IPC backend, service transaction layer, editable inspector, and apply/confirmation/revert flow. Arrangement editing, packaging, and Hyprland remain future milestones. [`../AGENTS.md`](../AGENTS.md) holds the operational rules for agents and contributors; this file is the orientation entry point.
+Status: Design draft. M3 is implemented: module skeleton, niri IPC backend, service transaction layer, editable inspector, apply/confirmation/revert flow, and arrangement editing with drag, snapping, numeric positioning, auto-arrange, and identify overlays. Packaging and Hyprland remain future milestones. [`../AGENTS.md`](../AGENTS.md) holds the operational rules for agents and contributors; this file is the orientation entry point.
 
 ## Product summary
 
@@ -24,7 +24,7 @@ Midori is a desktop Go/Fyne GUI for inspecting and changing display configuratio
 - M0 documentation: complete.
 - M1 skeleton and niri read-only: complete. The binary lists outputs, polls every 3 seconds, and reports loading, unsupported, no-output, and lost-connection states.
 - M2 inspector editing and apply/revert: complete. The inspector edits mode, refresh, scale, rotation, enablement, VRR, and position; apply uses a 15-second confirmation with automatic revert, rollback, and close interception.
-- M3 arrangement editing: not started. Numeric position editing works; drag, snap, auto-arrange, and identify remain.
+- M3 arrangement editing: complete. Tiles drag in logical pixels, snap within 12 screen pixels, reject overlapping drops, stay synchronized with numeric X/Y entry, auto-arrange into a gap-free row, and show numbered identify overlays for 3 seconds.
 - M4–M7: not started.
 - M8 persistence: deferred; no configuration-file writes.
 

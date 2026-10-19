@@ -69,7 +69,7 @@ Docs to update: [ui.md](ui.md) if copy or control order changes, [architecture.m
 
 ## M3 Arrangement editor
 
-Status: not started; next milestone.
+Status: complete.
 
 Work:
 
@@ -90,6 +90,8 @@ Acceptance criteria:
 Docs to update: [ui.md](ui.md), [architecture.md](architecture.md) if layout math changes.
 
 ## M4 Robustness
+
+Status: not started; next milestone.
 
 Work:
 

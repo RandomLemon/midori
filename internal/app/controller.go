@@ -13,6 +13,7 @@ import (
 	"fyne.io/fyne/v2"
 
 	"github.com/RandomLemon/midori/internal/display"
+	"github.com/RandomLemon/midori/internal/layout"
 	"github.com/RandomLemon/midori/internal/ui"
 )
 
@@ -271,6 +272,44 @@ func (c *Controller) Reset() {
 	c.mu.Unlock()
 
 	c.renderReady(draft, "")
+}
+
+// AutoArrange places enabled outputs in a gap-free row in the draft. It does
+// not contact the backend.
+func (c *Controller) AutoArrange() {
+	state := c.getState()
+	if state != StateReady && state != StateDirty {
+		return
+	}
+	if c.backend == nil || !c.backend.Capabilities().Apply {
+		return
+	}
+
+	c.mu.Lock()
+	c.draft = layout.AutoArrange(c.draft)
+	snapshot := c.snapshot
+	draft := cloneOutputs(c.draft)
+	err := display.ValidateDraft(c.backend.Capabilities(), snapshot, draft)
+	dirty := c.isDirty(draft, snapshot)
+	if dirty {
+		c.setStateLocked(StateDirty)
+	} else {
+		c.setStateLocked(StateReady)
+	}
+	c.mu.Unlock()
+
+	c.view.SetOutputs(draft)
+	c.view.SetEditable(true)
+	c.view.SetDirty(dirty)
+	c.view.SetValid(err == nil)
+	c.view.SetValidation(err)
+	c.view.SetBusy(false)
+	c.view.SetReady(true)
+	if dirty {
+		c.view.SetStatus("Unsaved changes")
+	} else {
+		c.view.SetStatus("Session-only changes")
+	}
 }
 
 func (c *Controller) Apply() {

@@ -20,13 +20,14 @@ const (
 )
 
 type Callbacks struct {
-	OnRefresh func()
-	OnRetry   func()
-	OnEdit    func(display.OutputID, display.OutputState)
-	OnApply   func()
-	OnReset   func()
-	OnKeep    func()
-	OnRevert  func()
+	OnRefresh     func()
+	OnRetry       func()
+	OnEdit        func(display.OutputID, display.OutputState)
+	OnApply       func()
+	OnReset       func()
+	OnKeep        func()
+	OnRevert      func()
+	OnAutoArrange func()
 }
 
 type Window struct {
@@ -40,16 +41,18 @@ type Window struct {
 	loadingView     *fyne.Container
 	unsupportedView *fyne.Container
 
-	backendBadge  *widget.Label
-	refreshButton *widget.Button
-	resetButton   *widget.Button
-	applyButton   *widget.Button
-	bannerLabel   *widget.Label
-	bannerBox     *fyne.Container
-	statusLabel   *widget.Label
-	errorTitle    *widget.Label
-	errorBody     *widget.Label
-	retryButton   *widget.Button
+	backendBadge      *widget.Label
+	refreshButton     *widget.Button
+	autoArrangeButton *widget.Button
+	identifyButton    *widget.Button
+	resetButton       *widget.Button
+	applyButton       *widget.Button
+	bannerLabel       *widget.Label
+	bannerBox         *fyne.Container
+	statusLabel       *widget.Label
+	errorTitle        *widget.Label
+	errorBody         *widget.Label
+	retryButton       *widget.Button
 
 	confirmation *widget.PopUp
 	countdown    *widget.Label
@@ -57,12 +60,14 @@ type Window struct {
 	keepButton   *widget.Button
 	confirming   bool
 
-	busy        bool
-	ready       bool
-	dirty       bool
-	valid       bool
-	editing     bool
-	hasSnapshot bool
+	caps           display.Capabilities
+	busy           bool
+	ready          bool
+	dirty          bool
+	valid          bool
+	editing        bool
+	hasSnapshot    bool
+	enabledOutputs int
 }
 
 func New(fyneApp fyne.App, callbacks Callbacks) *Window {
@@ -76,6 +81,10 @@ func New(fyneApp fyne.App, callbacks Callbacks) *Window {
 
 	w.canvas = newArrangementCanvas(func(id display.OutputID) {
 		w.selectOutput(id)
+	}, func(id display.OutputID, position display.Point) {
+		if w.editing {
+			w.inspector.SetPosition(id, position)
+		}
 	})
 	w.inspector = newInspector(
 		func(id display.OutputID) { w.selectOutput(id) },
@@ -100,6 +109,17 @@ func New(fyneApp fyne.App, callbacks Callbacks) *Window {
 	w.bannerBox = container.NewPadded(w.bannerLabel)
 	w.bannerBox.Hide()
 
+	w.autoArrangeButton = widget.NewButton("Auto arrange", func() {
+		if w.callbacks.OnAutoArrange != nil {
+			w.callbacks.OnAutoArrange()
+		}
+	})
+	w.autoArrangeButton.Disable()
+	w.identifyButton = widget.NewButton("Identify", func() {
+		w.canvas.Identify()
+	})
+	w.identifyButton.Disable()
+
 	w.statusLabel = widget.NewLabel("Loading displays...")
 	w.resetButton = widget.NewButton("Reset", func() {
 		if w.callbacks.OnReset != nil {
@@ -115,7 +135,8 @@ func New(fyneApp fyne.App, callbacks Callbacks) *Window {
 
 	inspectorScroll := container.NewVScroll(w.inspector.content)
 	inspectorWrap := newFixedWidth(inspectorScroll, inspectorWidth)
-	canvasArea := container.NewStack(w.canvas)
+	canvasToolbar := container.NewHBox(layout.NewSpacer(), w.autoArrangeButton, w.identifyButton)
+	canvasArea := container.NewBorder(container.NewPadded(canvasToolbar), nil, nil, nil, w.canvas)
 
 	w.mainView = container.NewBorder(
 		container.NewVBox(header, w.bannerBox),
@@ -202,11 +223,19 @@ func (w *Window) SetBackend(name, version string) {
 }
 
 func (w *Window) SetCapabilities(caps display.Capabilities) {
+	w.caps = caps
 	w.inspector.SetVRRCapable(caps.VRR)
+	w.updateButtons()
 }
 
 func (w *Window) SetOutputs(outputs []display.Output) {
 	w.hasSnapshot = true
+	w.enabledOutputs = 0
+	for _, output := range outputs {
+		if output.Enabled {
+			w.enabledOutputs++
+		}
+	}
 	w.inspector.SetOutputs(outputs)
 	w.canvas.SetOutputs(w.inspector.Outputs())
 	w.canvas.SetSelected(w.inspector.Selected())
@@ -232,6 +261,7 @@ func (w *Window) SetBusy(busy bool) {
 func (w *Window) SetEditable(editable bool) {
 	w.editing = editable
 	w.inspector.SetEditable(editable)
+	w.canvas.SetEditable(editable)
 	w.updateButtons()
 }
 
@@ -295,6 +325,19 @@ func (w *Window) updateButtons() {
 		w.applyButton.Enable()
 	} else {
 		w.applyButton.Disable()
+	}
+	canArrange := w.ready && w.editing && !w.busy && w.caps.Apply && w.enabledOutputs > 0
+	if canArrange {
+		w.autoArrangeButton.Enable()
+	} else {
+		w.autoArrangeButton.Disable()
+	}
+	canIdentify := w.ready && !w.busy && w.hasSnapshot && w.enabledOutputs > 0 &&
+		(w.editing || !w.caps.Apply)
+	if canIdentify {
+		w.identifyButton.Enable()
+	} else {
+		w.identifyButton.Disable()
 	}
 }
 
@@ -428,9 +471,6 @@ func (w *Window) editOutput(id display.OutputID, state display.OutputState) {
 func (w *Window) selectOutput(id display.OutputID) {
 	w.inspector.SetSelected(id)
 	w.canvas.SetSelected(id)
-	if w.editing {
-		w.inspector.EmitSelected()
-	}
 }
 
 type fixedWidth struct {

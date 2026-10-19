@@ -81,6 +81,11 @@ func main() {
 				controller.Reset()
 			}
 		},
+		OnAutoArrange: func() {
+			if controller != nil {
+				controller.AutoArrange()
+			}
+		},
 		OnKeep: func() {
 			if controller != nil {
 				controller.Keep()

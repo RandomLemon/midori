@@ -3,6 +3,7 @@ package ui
 import (
 	"strings"
 	"testing"
+	"time"
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/test"
@@ -219,6 +220,189 @@ func TestEditingControlsAndApplyBar(t *testing.T) {
 	window.SetEditable(false)
 	if !window.inspector.enabled.Disabled() || !window.inspector.scale.Disabled() {
 		t.Fatal("inspector controls should be disabled while busy")
+	}
+}
+
+func dragTestOutputs() []display.Output {
+	mode := display.Mode{Width: 1920, Height: 1080, RefreshMilliHz: 60000, Preferred: true}
+	return []display.Output{
+		{
+			ID:    "DP-1",
+			Name:  "DP-1",
+			Modes: []display.Mode{mode},
+			OutputState: display.OutputState{
+				Enabled:   true,
+				Mode:      mode,
+				Scale:     1,
+				Transform: display.TransformNormal,
+				Position:  display.Point{X: 0, Y: 0},
+			},
+		},
+		{
+			ID:    "DP-2",
+			Name:  "DP-2",
+			Modes: []display.Mode{mode},
+			OutputState: display.OutputState{
+				Enabled:   true,
+				Mode:      mode,
+				Scale:     1,
+				Transform: display.TransformNormal,
+				Position:  display.Point{X: 1920, Y: 0},
+			},
+		},
+	}
+}
+
+func canvasPosition(c *arrangementCanvas, id display.OutputID) display.Point {
+	output, ok := c.output(id)
+	if !ok {
+		return display.Point{}
+	}
+	return output.Position
+}
+
+func newInteractionWindow(t *testing.T, callbacks Callbacks) *Window {
+	t.Helper()
+	fyneApp := testApp()
+	t.Cleanup(fyneApp.Quit)
+	window := New(fyneApp, callbacks)
+	window.SetCapabilities(display.Capabilities{Apply: true, VRR: true})
+	window.SetOutputs(dragTestOutputs())
+	window.SetBusy(false)
+	window.SetEditable(true)
+	window.SetDirty(false)
+	window.SetValid(true)
+	window.SetReady(true)
+	window.canvas.Resize(fyne.NewSize(800, 600))
+	return window
+}
+
+func TestCanvasDragMovesTileAndSyncsPositionEntries(t *testing.T) {
+	window := newInteractionWindow(t, Callbacks{})
+	window.canvas.Resize(fyne.NewSize(800, 600))
+	tile := window.canvas.tiles["DP-2"]
+	if tile == nil {
+		t.Fatal("missing DP-2 tile")
+	}
+	zoom := window.canvas.zoom
+	if zoom <= 0 {
+		t.Fatal("canvas zoom is not positive")
+	}
+	tile.Dragged(&fyne.DragEvent{Dragged: fyne.Delta{DX: 0, DY: float32(100 * zoom)}})
+	tile.DragEnd()
+
+	if got := canvasPosition(window.canvas, "DP-2"); got != (display.Point{X: 1920, Y: 100}) {
+		t.Fatalf("position after drag = %+v, want 1920,100", got)
+	}
+	if got := window.inspector.posX.Text; got != "1920" {
+		t.Fatalf("inspector X = %q, want 1920", got)
+	}
+	if got := window.inspector.posY.Text; got != "100" {
+		t.Fatalf("inspector Y = %q, want 100", got)
+	}
+
+	window.inspector.posX.SetText("2100")
+	window.inspector.posY.SetText("25")
+	window.inspector.positionChanged("")
+	if got := canvasPosition(window.canvas, "DP-2"); got != (display.Point{X: 2100, Y: 25}) {
+		t.Fatalf("position after numeric entry = %+v, want 2100,25", got)
+	}
+}
+
+func TestCanvasDragRejectsOverlap(t *testing.T) {
+	window := newInteractionWindow(t, Callbacks{})
+	window.canvas.Resize(fyne.NewSize(800, 600))
+	tile := window.canvas.tiles["DP-2"]
+	zoom := window.canvas.zoom
+	tile.Dragged(&fyne.DragEvent{Dragged: fyne.Delta{DX: float32(-900 * zoom)}})
+	tile.DragEnd()
+
+	if got := canvasPosition(window.canvas, "DP-2"); got != (display.Point{X: 1920, Y: 0}) {
+		t.Fatalf("overlapping drag moved tile to %+v, want last valid 1920,0", got)
+	}
+	if got := window.inspector.posX.Text; got != "1920" {
+		t.Fatalf("inspector X after rejected drag = %q, want 1920", got)
+	}
+}
+
+func TestCanvasDragSnapsToAdjacentEdge(t *testing.T) {
+	window := newInteractionWindow(t, Callbacks{})
+	window.canvas.Resize(fyne.NewSize(800, 600))
+	tile := window.canvas.tiles["DP-2"]
+	zoom := window.canvas.zoom
+	tile.Dragged(&fyne.DragEvent{Dragged: fyne.Delta{DY: float32(5 * zoom)}})
+	tile.DragEnd()
+
+	if got := canvasPosition(window.canvas, "DP-1"); got != (display.Point{X: 0, Y: 0}) {
+		t.Fatalf("DP-1 moved to %+v", got)
+	}
+	if got := canvasPosition(window.canvas, "DP-2"); got != (display.Point{X: 1920, Y: 0}) {
+		t.Fatalf("drag did not snap back to the adjacent edge: %+v", got)
+	}
+}
+
+func TestCanvasIdentifyOverlays(t *testing.T) {
+	window := newInteractionWindow(t, Callbacks{})
+	window.canvas.Resize(fyne.NewSize(800, 600))
+	if got := window.canvas.identifyDuration; got != 3*time.Second {
+		t.Fatalf("identify duration = %v, want 3s", got)
+	}
+	window.canvas.identifyDuration = time.Second
+	window.canvas.Identify()
+	t.Cleanup(window.canvas.clearIdentify)
+
+	dp1 := window.canvas.tiles["DP-1"]
+	dp2 := window.canvas.tiles["DP-2"]
+	if !dp1.identify.Visible() || dp1.identify.Text != "1" {
+		t.Fatalf("DP-1 identify overlay = %q visible=%v", dp1.identify.Text, dp1.identify.Visible())
+	}
+	if !dp2.identify.Visible() || dp2.identify.Text != "2" {
+		t.Fatalf("DP-2 identify overlay = %q visible=%v", dp2.identify.Text, dp2.identify.Visible())
+	}
+	window.canvas.clearIdentify()
+	if dp1.identify.Visible() || dp2.identify.Visible() {
+		t.Fatal("identify overlay still visible after clear")
+	}
+}
+
+func TestCanvasToolbarEnablement(t *testing.T) {
+	arranged := 0
+	window := newInteractionWindow(t, Callbacks{
+		OnAutoArrange: func() { arranged++ },
+	})
+
+	if window.autoArrangeButton.Disabled() {
+		t.Fatal("auto arrange should be enabled in a ready editable state")
+	}
+	if window.identifyButton.Disabled() {
+		t.Fatal("identify should be enabled in a ready editable state")
+	}
+	test.Tap(window.autoArrangeButton)
+	if arranged != 1 {
+		t.Fatalf("auto arrange callback count = %d", arranged)
+	}
+
+	window.SetBusy(true)
+	if !window.autoArrangeButton.Disabled() || !window.identifyButton.Disabled() {
+		t.Fatal("canvas actions should be disabled while busy")
+	}
+
+	window.SetBusy(false)
+	window.SetCapabilities(display.Capabilities{Apply: false})
+	window.SetEditable(false)
+	if !window.autoArrangeButton.Disabled() {
+		t.Fatal("auto arrange should be disabled for a read-only backend")
+	}
+	if window.identifyButton.Disabled() {
+		t.Fatal("identify should remain enabled for a read-only backend")
+	}
+
+	window.SetCapabilities(display.Capabilities{Apply: true})
+	if !window.autoArrangeButton.Disabled() {
+		t.Fatal("auto arrange should be disabled when a writable backend is not editable")
+	}
+	if !window.identifyButton.Disabled() {
+		t.Fatal("identify should be disabled when a writable backend is not editable")
 	}
 }
 

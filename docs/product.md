@@ -2,7 +2,7 @@
 
 Defines the user problem, v1 scope, and observable acceptance criteria for Midori.
 
-Status: Design draft. M2 implements inspection, inspector editing, apply/confirmation, and revert. Arrangement editing remains future work. See the [documentation index](README.md) and the [architecture contract](architecture.md) for implementation details.
+Status: Design draft. M3 implements inspection, inspector editing, arrangement editing, apply/confirmation, and revert. See the [documentation index](README.md) and the [architecture contract](architecture.md) for implementation details.
 
 ## Problem
 
