@@ -2,7 +2,7 @@
 
 How to build, test, and extend Midori, including toolchain, dependencies, test strategy, CI, and packaging.
 
-Status: M4 implemented. The commands below are active for the current module. See [architecture.md](architecture.md) for package contracts and [AGENTS.md](../AGENTS.md) for agent rules.
+Status: M5 implemented. The commands below are active for the current module. See [architecture.md](architecture.md) for package contracts and [AGENTS.md](../AGENTS.md) for agent rules.
 
 ## Toolchain
 
@@ -216,21 +216,58 @@ Linux job:
 - `go vet ./...`.
 - `go test ./...`.
 - `CGO_ENABLED=1 go build -tags wayland -trimpath ./cmd/midori`.
+- `sh -n scripts/*.sh`.
+- `VERSION=0.1.0 ./scripts/package.sh`.
 
 No GUI tests and no live compositor in CI. A future matrix can add the latest Go release.
 
 ## Packaging
 
 - Single binary; no daemon and no systemd unit.
-- Future packaging command:
+- Application ID: `io.github.randomlemon.midori`. `FyneApp.toml` carries the same ID plus the name, icon, version, and Linux desktop metadata.
+- The scripts use standard Linux tools: `install`, `tar`, and `xz`. `desktop-file-validate` and the desktop/icon cache updaters are optional.
+- The packaging scripts are authoritative. The Fyne CLI Linux packager names the desktop file after the application name, not the application ID, and mutates the metadata build counter, so the scripts produce the final layout directly.
+- `scripts/package.sh` builds with the Wayland tag and injects the version, then writes `dist/midori-<version>-linux-<arch>.tar.xz`:
 
 ```sh
-fyne package -os linux -tags wayland -name midori
+VERSION=0.1.0 ./scripts/package.sh
 ```
 
-- Application ID: `io.github.randomlemon.midori`.
-- Version is injected with `-ldflags "-X main.version=..."`.
-- Install instructions ship the binary on `PATH`; no privileged install step is designed in v1.
+Archive layout:
+
+```text
+midori-<version>-linux-<arch>/
+  usr/local/bin/midori
+  usr/local/share/applications/io.github.randomlemon.midori.desktop
+  usr/local/share/icons/hicolor/512x512/apps/io.github.randomlemon.midori.png
+```
+
+- The script verifies `midori <version>` from the packaged binary and validates the desktop entry when `desktop-file-validate` is installed. The archive desktop entry points `Exec` and `TryExec` at `/usr/local/bin/midori` to match the archive layout.
+- Version injection uses `-ldflags "-X main.version=$VERSION"`. An uninjected build prints `midori dev`. The default script version is `0.1.0`.
+- The packaged binary uses the Wayland driver because the build always includes `-tags wayland`.
+- User install builds and installs under `~/.local`; no root is required:
+
+```sh
+VERSION=0.1.0 ./scripts/install.sh
+```
+
+- The install script places the binary in `$PREFIX/bin`, the app-ID desktop entry in `$PREFIX/share/applications`, and the icon in the hicolor tree. It rewrites `Exec` and `TryExec` to the absolute installed binary path and refreshes the desktop and icon caches when the tools are available.
+- Staged or system-wide installs use the same script with standard prefix variables:
+
+```sh
+DESTDIR=/tmp/pkg PREFIX=/usr/local ./scripts/install.sh
+sudo PREFIX=/usr/local ./scripts/install.sh
+SKIP_BUILD=1 PREFIX="$HOME/.local" ./scripts/install.sh
+```
+
+- `SKIP_BUILD=1` installs the existing `bin/midori`; without it the script builds into a temporary directory so it never overwrites the development binary.
+- Uninstall with the same prefix variables:
+
+```sh
+./scripts/uninstall.sh
+```
+
+- The desktop entry is named `io.github.randomlemon.midori.desktop`, starts `midori`, and sets `StartupWMClass=io.github.randomlemon.midori` to match Fyne's Wayland application ID.
 
 ## Versioning and commits
 

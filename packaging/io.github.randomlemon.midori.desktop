@@ -1,0 +1,14 @@
+[Desktop Entry]
+Type=Application
+Version=1.0
+Name=Midori
+GenericName=Display Settings
+Comment=Inspect and change display configuration under niri
+Exec=midori
+TryExec=midori
+Icon=io.github.randomlemon.midori
+Terminal=false
+Categories=Settings;
+Keywords=display;monitor;niri;resolution;scale;refresh;
+StartupNotify=true
+StartupWMClass=io.github.randomlemon.midori

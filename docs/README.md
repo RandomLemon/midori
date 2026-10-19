@@ -2,7 +2,7 @@
 
 Documentation index for Midori, a Linux/Wayland desktop GUI that inspects and changes display configuration under niri, with a backend boundary for future compositors.
 
-Status: Design draft. M4 is implemented: module skeleton, niri IPC backend, service transaction layer, editable inspector, apply/confirmation/revert flow, arrangement editing, hotplug polling with draft discard, connection-loss and recovery states, close-time rollback, and structured debug logging. Packaging and Hyprland remain future milestones. [`../AGENTS.md`](../AGENTS.md) holds the operational rules for agents and contributors; this file is the orientation entry point.
+Status: Design draft. M5 is implemented: module skeleton, niri IPC backend, service transaction layer, editable inspector, apply/confirmation/revert flow, arrangement editing, hotplug polling with draft discard, connection-loss and recovery states, close-time rollback, structured debug logging, and versioned Linux packaging with an application icon and desktop entry. Hyprland remains a future milestone. [`../AGENTS.md`](../AGENTS.md) holds the operational rules for agents and contributors; this file is the orientation entry point.
 
 ## Product summary
 
@@ -26,7 +26,8 @@ Midori is a desktop Go/Fyne GUI for inspecting and changing display configuratio
 - M2 inspector editing and apply/revert: complete. The inspector edits mode, refresh, scale, rotation, enablement, VRR, and position; apply uses a 15-second confirmation with automatic revert, rollback, and close interception.
 - M3 arrangement editing: complete. Tiles drag in logical pixels, snap within 12 screen pixels, reject overlapping drops, stay synchronized with numeric X/Y entry, auto-arrange into a gap-free row, and show numbered identify overlays for 3 seconds.
 - M4 robustness: complete. A 3-second fingerprint poll updates outputs and discards dirty drafts on hotplug with a banner, three consecutive failures enter the lost-connection state, close during apply rolls back before exit, replies are size- and timeout-bounded, and debug logging reports operation, duration, and output names.
-- M5–M7: not started.
+- M5 packaging: complete. `scripts/package.sh` builds a versioned Wayland binary and creates a tar.xz with an app-ID desktop entry and hicolor icon; `scripts/install.sh` installs to a user or staged prefix; the packaged app launches from the menu with application ID `io.github.randomlemon.midori`.
+- M6–M7: not started.
 - M8 persistence: deferred; no configuration-file writes.
 
 ## Document map
@@ -74,6 +75,7 @@ For a new contributor: [`README.md`](README.md) → [`product.md`](product.md) �
 - Disabled outputs are excluded from overlap validation but remain listed and editable.
 - At least one output must remain enabled.
 - Hyprland starts read-only; apply is gated on verifying that `hl.monitor` preserves unmanaged per-output fields before `hyprctl eval` is enabled on the Lua config provider.
+- Linux packaging uses an application-ID desktop entry, a hicolor icon, and a Wayland-tagged binary. Version is injected with ldflags. No daemon or systemd unit is installed.
 
 ## See also
 

@@ -1,0 +1,16 @@
+[Details]
+Icon = "assets/icon.png"
+Name = "Midori"
+ID = "io.github.randomlemon.midori"
+Version = "0.1.0"
+Build = 1
+
+[Source]
+Repo = "https://github.com/RandomLemon/midori"
+Dir = "."
+
+[LinuxAndBSD]
+GenericName = "Display Settings"
+Comment = "Inspect and change display configuration under niri"
+Categories = ["Settings"]
+Keywords = ["display", "monitor", "niri", "resolution", "scale", "refresh"]

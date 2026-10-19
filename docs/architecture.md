@@ -2,7 +2,7 @@
 
 The implementation contract for Midori: package boundaries, domain types, the backend interface, the apply and revert transaction, validation, layout math, and failure handling.
 
-Status: Design draft. M4 implements the editable inspector, the apply/confirmation/revert transaction, the arrangement editor, hotplug polling, connection-loss and recovery states, close-time rollback, and bounded IPC diagnostics. Hyprland remains future work. This document is authoritative for types and behavior. Product scope is in [product.md](product.md); interaction details are in [ui.md](ui.md).
+Status: Design draft. M5 implements the editable inspector, the apply/confirmation/revert transaction, the arrangement editor, hotplug polling, connection-loss and recovery states, close-time rollback, bounded IPC diagnostics, and Linux packaging. Hyprland remains future work. This document is authoritative for types and behavior. Product scope is in [product.md](product.md); interaction details are in [ui.md](ui.md).
 
 ## Context and constraints
 
@@ -68,6 +68,12 @@ internal/backend/hyprland/      hyprctl command adapter and parsers (future)
 internal/layout/                logical-size, bounds, snapping, overlap, auto-arrange
 internal/ui/                    window, arrangement canvas, tile, inspector, confirmation popup
 internal/testutil/fakebackend/  scriptable test backend
+FyneApp.toml                    Fyne metadata, application ID, Linux desktop metadata
+assets/icon.png                 application icon and packaged hicolor icon source
+packaging/*.desktop             desktop entry template
+scripts/package.sh              versioned Linux tar.xz packaging
+scripts/install.sh              user or staged installation
+scripts/uninstall.sh            removal from the selected prefix
 ```
 
 ## Domain model

@@ -2,7 +2,7 @@
 
 Defines the user problem, v1 scope, and observable acceptance criteria for Midori.
 
-Status: Design draft. M4 implements inspection, inspector editing, arrangement editing, apply/confirmation, revert, hotplug handling, and connection recovery. See the [documentation index](README.md) and the [architecture contract](architecture.md) for implementation details.
+Status: Design draft. M5 implements inspection, inspector editing, arrangement editing, apply/confirmation, revert, hotplug handling, connection recovery, and Linux packaging. See the [documentation index](README.md) and the [architecture contract](architecture.md) for implementation details.
 
 ## Problem
 

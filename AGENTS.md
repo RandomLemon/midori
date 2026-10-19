@@ -4,7 +4,7 @@ Operational instructions for coding agents working on Midori, a Linux/Wayland di
 
 ## Project
 
-Midori is a Linux/Wayland display-configuration GUI for the niri compositor, written in Go with Fyne, and designed so additional compositor backends can be added without changing the UI. The repository contains the M4 implementation: module skeleton, domain and service layers, the niri IPC backend, a Fyne window with editable output controls, the apply/confirmation/revert flow, the arrangement editor with drag, snapping, numeric positioning, auto-arrange, and identify overlays, plus hotplug polling, connection-loss recovery, close-time rollback, and structured debug logging. Packaging and Hyprland remain future milestones. The authoritative design starts at [`docs/README.md`](docs/README.md).
+Midori is a Linux/Wayland display-configuration GUI for the niri compositor, written in Go with Fyne, and designed so additional compositor backends can be added without changing the UI. The repository contains the M5 implementation: module skeleton, domain and service layers, the niri IPC backend, a Fyne window with editable output controls, the apply/confirmation/revert flow, the arrangement editor with drag, snapping, numeric positioning, auto-arrange, and identify overlays, hotplug polling, connection-loss recovery, close-time rollback, structured debug logging, and versioned Linux packaging with an application icon and desktop entry. Hyprland remains a future milestone. The authoritative design starts at [`docs/README.md`](docs/README.md).
 
 - Module path: `github.com/RandomLemon/midori`
 - Binary name: `midori`
@@ -45,7 +45,7 @@ Documented timeouts and limits: backend operation timeout `5` seconds, niri dial
 
 ## Target repository layout
 
-This tree is the package contract. M4 implements `cmd/midori`, `internal/app`, `internal/display`, `internal/backend`, `internal/backend/niri`, `internal/layout`, `internal/ui`, and `internal/testutil/fakebackend`; `internal/backend/hyprland` remains future work.
+This tree is the package contract. M5 implements `cmd/midori`, `internal/app`, `internal/display`, `internal/backend`, `internal/backend/niri`, `internal/layout`, `internal/ui`, `internal/testutil/fakebackend`, `FyneApp.toml`, `assets/`, `packaging/`, and `scripts/`; `internal/backend/hyprland` remains future work.
 
 ```text
 cmd/midori/main.go              flags, backend selection, app bootstrap
@@ -57,11 +57,17 @@ internal/backend/hyprland/      hyprctl command adapter and parsers (future)
 internal/layout/                logical-size, bounds, snapping, overlap, auto-arrange
 internal/ui/                    window, arrangement canvas, tile, inspector, confirmation popup
 internal/testutil/fakebackend/  scriptable test backend
+FyneApp.toml                    Fyne metadata, application ID, Linux desktop metadata
+assets/icon.png                 application icon and packaged hicolor icon source
+packaging/*.desktop             desktop entry template
+scripts/package.sh              versioned Linux tar.xz packaging
+scripts/install.sh              user or staged installation
+scripts/uninstall.sh            removal from the selected prefix
 ```
 
 ## Toolchain and commands
 
-These commands are active for the M4 implementation. The `wayland` build tag is mandatory for running under niri because niri is Wayland-only; Fyne's default Linux build targets X11.
+These commands are active for the M5 implementation. The `wayland` build tag is mandatory for running under niri because niri is Wayland-only; Fyne's default Linux build targets X11.
 
 ```sh
 CGO_ENABLED=1 go build -tags wayland -trimpath -o bin/midori ./cmd/midori
@@ -70,6 +76,8 @@ go test ./...
 go test -race ./...
 go vet ./...
 gofmt -l .
+VERSION=0.1.0 ./scripts/package.sh
+./scripts/install.sh
 ```
 
 `gofmt -l .` must print nothing. Linux dependencies from Fyne:

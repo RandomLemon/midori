@@ -114,7 +114,7 @@ Docs to update: [ui.md](ui.md) for any state copy changes, [development.md](deve
 
 ## M5 Packaging
 
-Status: not started; next milestone.
+Status: complete.
 
 Work:
 
@@ -132,6 +132,8 @@ Acceptance criteria:
 Docs to update: [development.md](development.md), [README.md](README.md), this roadmap.
 
 ## M6 Hyprland read-only
+
+Status: not started; next milestone.
 
 Work:
 
