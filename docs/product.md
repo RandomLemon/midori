@@ -2,7 +2,7 @@
 
 Defines the user problem, v1 scope, and observable acceptance criteria for Midori.
 
-Status: Design draft. M5 implements inspection, inspector editing, arrangement editing, apply/confirmation, revert, hotplug handling, connection recovery, and Linux packaging. See the [documentation index](README.md) and the [architecture contract](architecture.md) for implementation details.
+Status: Design draft. M5 implements inspection, inspector editing, arrangement editing, apply/confirmation, revert, hotplug handling, connection recovery, and Linux packaging. M6 export is designed but not started. See the [documentation index](README.md) and the [architecture contract](architecture.md) for implementation details.
 
 ## Problem
 
@@ -26,15 +26,17 @@ niri provides runtime output IPC, but it is a command-line interface with JSON p
 - Apply changes safely: a 15-second confirmation, automatic revert on timeout, explicit revert, or window close.
 - Roll back predictably on partial failure so a rejected change does not leave a half-configured desktop.
 - Report unsupported compositors, missing outputs, lost connections, and invalid configuration clearly.
+- Export the current applied configuration as a backend-neutral JSON snapshot in the user's home directory without changing compositor state.
 - Keep the UI backend-independent: adding a compositor backend adds no UI conditional branches beyond capability checks.
 
 ## v1 scope
 
-v1 targets niri only and is runtime-only. It changes the running compositor configuration through niri IPC and never writes compositor configuration files. Closing Midori does not persist anything; closing niri or reloading its configuration reverts to the configuration file. A future persistence feature requires a separate approved design.
+v1 targets niri only and is runtime-only. It changes the running compositor configuration through niri IPC and never writes compositor configuration files. Closing Midori does not persist anything; closing niri or reloading its configuration reverts to the configuration file. M6 adds an explicit export of the current applied configuration as a backend-neutral JSON snapshot in the user's home directory; the snapshot is never loaded automatically and is not a compositor configuration file. Persistence requires a separate approved design.
 
 ### v1 non-goals
 
-- Configuration persistence, save-to-file, or config generation for any compositor.
+- Configuration persistence, automatic save, or compositor configuration generation.
+- Importing, reading, or automatically applying an exported snapshot.
 - HDR, color management, ICC profiles, or gamma control.
 - Brightness control.
 - Mirroring.
@@ -64,6 +66,7 @@ v1 targets niri only and is runtime-only. It changes the running compositor conf
 | FR-13 | Show clear unsupported, no-output, connection-lost, and invalid-configuration states. |
 | FR-14 | Auto-arrange enabled outputs into a single row. |
 | FR-15 | Identify outputs by temporary numbered overlays. |
+| FR-16 | Export the current applied configuration as a backend-neutral JSON snapshot to the user's home directory without changing compositor state. |
 
 ## Non-functional requirements
 
@@ -76,7 +79,7 @@ v1 targets niri only and is runtime-only. It changes the running compositor conf
 | NFR-5 | English-only UI strings and documentation. |
 | NFR-6 | A single binary; no helper process and no daemon. |
 | NFR-7 | Linux/Wayland only. |
-| NFR-8 | No configuration-file writes. |
+| NFR-8 | No compositor configuration-file writes; export writes only a backend-neutral JSON snapshot under `$HOME`. |
 
 ## User stories with acceptance criteria
 
@@ -91,6 +94,20 @@ Acceptance criteria:
 - The inspector shows the current mode, refresh rate, scale, transform, position, and VRR state for the selected output.
 - No backend mutation request is sent during load or selection.
 - The version badge shows the niri version, or `unknown` when the version request fails, without blocking the output list.
+
+### Export current configuration
+
+Choosing `Export` writes the current applied display configuration to the user's home directory without changing the compositor, the snapshot, or the draft.
+
+Acceptance criteria:
+
+- `Export` is enabled in `Ready` and `Dirty`; in `Dirty` it exports the applied snapshot, not pending edits.
+- Exactly one file is created: `$HOME/midori-display-config-<backend>-<YYYYMMDDTHHMMSSZ>.json`.
+- The file contains every output in connector-name order, including disabled outputs with `enabled: false`.
+- The file excludes serial numbers, make/model text, physical size, advertised mode lists, and raw compositor payloads.
+- The compositor state, snapshot, and draft are unchanged; no backend call is made.
+- An existing file is never overwritten. A write failure shows the export error banner and leaves no partial file.
+- `Export` remains available on a read-only backend because it does not mutate compositor state.
 
 ### Change mode
 
@@ -133,7 +150,7 @@ Opening outside niri shows an explanation and no apply controls.
 Acceptance criteria:
 
 - The window shows `No supported compositor detected` with the niri-specific guidance and a `Retry` button.
-- No output list, inspector, `Reset`, `Auto arrange`, or `Apply` control is interactive.
+- No output list, inspector, `Export`, `Reset`, `Auto arrange`, or `Apply` control is interactive.
 - `Retry` re-runs detection without restarting the process.
 
 ### Partial failure
@@ -151,16 +168,19 @@ Acceptance criteria:
 
 - Runtime-only operation: compositor configuration files are never read for editing or written.
 - niri baseline is `26.04` or newer; older versions may return unsupported replies, which surface as `ErrUnsupported`.
+- Hyprland support is future work and is sequenced last; no Hyprland implementation is scheduled, and it does not gate any niri or other approved work.
 - One compositor instance per process; Midori does not coordinate with other display tools.
 - A single Midori instance is assumed. Concurrent instances are not prevented, but serialization is only guaranteed inside one process.
 - No privileged helper; Midori runs with the user's session permissions and uses the compositor's own IPC credentials.
 - The compositor variables `$NIRI_SOCKET` and `$HYPRLAND_INSTANCE_SIGNATURE` are the only environment inputs for backend detection.
+- Export writes only to `$HOME`; it never writes, reads, or reloads a compositor configuration path.
 - The GUI must remain usable on a single 1366×768 display; the minimum window is `900×620`.
 
 ## Success criteria
 
 - A user can inspect every output, change mode, scale, rotation, position, enablement, and VRR, apply, and safely revert without editing a file.
-- No display configuration is written to disk at any point.
+- A user can export the current applied configuration to the home directory without changing the compositor or writing a compositor configuration file.
+- No display configuration is persisted automatically or written to a compositor configuration path at any point.
 - Unsupported environments fail with an actionable message and no destructive control.
 - Timeout, explicit revert, and window close during confirmation all restore the pre-apply state.
 - Partial failure restores previously applied outputs or clearly reports that recovery is needed.

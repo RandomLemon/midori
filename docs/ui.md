@@ -2,7 +2,7 @@
 
 Pixel-level and interaction-level specification for the Fyne UI, including exact copy for empty, error, and confirmation states.
 
-Status: Design draft. M4 implements the header, output list, canvas, editable inspector, drag with snapping and overlap rejection, numeric positioning, auto-arrange, identify overlays, apply bar, 15-second confirmation, revert, hotplug banners, and loading, unsupported, no-output, lost-connection, and recovery states. Behavior contracts live in [architecture.md](architecture.md); scope lives in [product.md](product.md).
+Status: Design draft. M4 implements the header, output list, canvas, editable inspector, drag with snapping and overlap rejection, numeric positioning, auto-arrange, identify overlays, apply bar, 15-second confirmation, revert, hotplug banners, and loading, unsupported, no-output, lost-connection, and recovery states. M6 adds the export action; it is designed but not started. Behavior contracts live in [architecture.md](architecture.md); scope lives in [product.md](product.md).
 
 ## Principles
 
@@ -22,13 +22,14 @@ Header (56 px):
 
 - Title `Display Settings`.
 - Backend badge: `niri 26.04` or `Hyprland <tag>` when the version is known, otherwise the backend display name plus `unknown`, for example `niri unknown`.
+- `Export` button, placed immediately left of `Refresh`. It writes the applied snapshot to the user's home directory and is enabled in `Ready` and `Dirty`. While `Dirty` its tooltip is `Exports the applied configuration; pending edits are not included.` It is disabled in `Loading`, `Unavailable`, `Applying`, `Confirming`, and `Reverting`, and it sends no backend request.
 - `Refresh` button. It is enabled only in `Ready`. While `Dirty` it is disabled with the tooltip `Reset changes before refreshing`. While `Applying`, `Confirming`, or `Reverting` it is disabled.
 
 Banner slot:
 
 - Sits directly below the header.
-- Hidden when there is no warning or error.
-- Shows hotplug, stale-snapshot, read-only, and non-modal error messages.
+- Hidden when there is no warning, error, or export result.
+- Shows hotplug, stale-snapshot, read-only, export success/failure, and non-modal error messages.
 - A banner never blocks the inspector or canvas.
 
 Main horizontal area:
@@ -51,7 +52,7 @@ ASCII wireframe:
 
 ```text
 +------------------------------------------------------------------------------+
-| Display Settings                                  niri 26.04       [Refresh] |
+| Display Settings                              niri 26.04  [Export] [Refresh] |
 +------------------------------------------------------------------------------+
 | [!] Display configuration changed. Pending edits were discarded.             |
 +-----------------------------------------------------+------------------------+
@@ -150,6 +151,16 @@ Field-specific validation messages appear inline and mirror the exact strings in
 - While applying, the footer shows `Applying...` and all controls are disabled.
 - Closing the window while dirty shows `Discard unsaved changes?` with `Discard` and `Cancel`; `Cancel` keeps the window and the draft.
 
+## Export
+
+- `Export` serializes the last applied snapshot; it never sends a backend request and never changes the snapshot, draft, or compositor.
+- Destination: `<home>/midori-display-config-<backend>-<YYYYMMDDTHHMMSSZ>.json`, where `<home>` is the user's home directory.
+- On success, a non-modal banner shows `Exported display configuration to <absolute path>.` for 5 seconds. The path is shown as returned by the operating system, not shortened.
+- On failure, the banner shows `Could not export the display configuration to your home directory.` and remains until the next export attempt, refresh, or state change. No partial file remains.
+- `Export` is available in `Ready` and `Dirty` and on read-only backends. It is disabled in `Loading`, `Unavailable`, `Applying`, `Confirming`, and `Reverting`; when no current snapshot is available, its tooltip is `Export is unavailable until the display configuration is loaded.`
+- Exporting while dirty does not clear `Unsaved changes`; the draft remains editable.
+- There is no confirmation dialog and no file picker.
+
 ## Confirmation popup
 
 - A modal `widget.NewModalPopUp`, not a dismissible dialog.
@@ -182,14 +193,17 @@ Exact copy:
 | Invalid mode | `Select an available mode.` | Inline on the resolution select. |
 | Scale | `Scale must be between 50% and 300%.` | Inline on the scale slider. |
 | Hyprland hyprlang provider | `Applying changes requires Hyprland 0.55+ with the Lua config provider.` | Banner; apply disabled. |
-| Read-only backend capability | `This compositor backend is read-only in this build.` | Banner; inspector controls, `Auto arrange`, `Reset`, and `Apply` disabled; output details and `Identify` remain available. |
+| Read-only backend capability | `This compositor backend is read-only in this build.` | Banner; inspector controls, `Auto arrange`, `Reset`, and `Apply` disabled; output details, `Identify`, and `Export` remain available. |
+| Export success | `Exported display configuration to <absolute path>.` | Banner for 5 seconds; no state change. |
+| Export failure | `Could not export the display configuration to your home directory.` | Banner; retry with `Export`; no partial file remains. |
 
 Rules:
 
 - A banner is used for state-level messages; inline errors are used for field-level validation.
-- The unsupported state hides the inspector and canvas and shows only the message and `Retry`.
-- The no-output state keeps the header and output list empty, with `Refresh` available.
-- The lost-connection state keeps the last rendered snapshot visible but disables editing and apply.
+- The unsupported state hides the inspector and canvas and shows only the message and `Retry`; `Export` is disabled.
+- The no-output state keeps the header and output list empty, with `Refresh` available and `Export` disabled.
+- The lost-connection state keeps the last rendered snapshot visible but disables editing, apply, and export.
+- The read-only backend state keeps `Export` enabled because export does not mutate compositor state.
 - Backend technical error strings are never shown verbatim; only the mapped copy above is displayed.
 
 ## Hotplug behavior

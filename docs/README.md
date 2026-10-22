@@ -2,7 +2,7 @@
 
 Documentation index for Midori, a Linux/Wayland desktop GUI that inspects and changes display configuration under niri, with a backend boundary for future compositors.
 
-Status: Design draft. M5 is implemented: module skeleton, niri IPC backend, service transaction layer, editable inspector, apply/confirmation/revert flow, arrangement editing, hotplug polling with draft discard, connection-loss and recovery states, close-time rollback, structured debug logging, and versioned Linux packaging with an application icon and desktop entry. Hyprland remains a future milestone. [`../AGENTS.md`](../AGENTS.md) holds the operational rules for agents and contributors; this file is the orientation entry point.
+Status: Design draft. M5 is implemented: module skeleton, niri IPC backend, service transaction layer, editable inspector, apply/confirmation/revert flow, arrangement editing, hotplug polling with draft discard, connection-loss and recovery states, close-time rollback, structured debug logging, and versioned Linux packaging with an application icon and desktop entry. M6 export is designed but not started. Hyprland remains future work, sequenced last and not scheduled. [`../AGENTS.md`](../AGENTS.md) holds the operational rules for agents and contributors; this file is the orientation entry point.
 
 ## Product summary
 
@@ -13,8 +13,8 @@ Midori is a desktop Go/Fyne GUI for inspecting and changing display configuratio
 - Go `1.24.0` with Fyne `fyne.io/fyne/v2 v2.8.2`; single binary.
 - Wayland-only; niri `26.04` or newer is the first backend.
 - Direct JSON IPC on `$NIRI_SOCKET`; no `niri msg` subprocess for core operations.
-- Hyprland later via `hyprctl` with a read-only inventory first and a gated apply path using `hyprctl eval` on the Lua config provider.
-- Runtime-only: v1 exposes no Save action and writes no compositor configuration files.
+- Hyprland future work, sequenced last, via `hyprctl` with a read-only inventory first and a gated apply path using `hyprctl eval` on the Lua config provider.
+- Runtime-only: v1 exposes no Save action and writes no compositor configuration files; M6 exports an explicit JSON snapshot to the home directory on request.
 - Safe apply: every apply is a transaction with a 15-second confirmation and automatic rollback on timeout, explicit revert, or window close.
 - Hotplug awareness through a 3-second poll of compositor outputs.
 - No daemon, no root privileges, no network access, no telemetry.
@@ -27,8 +27,8 @@ Midori is a desktop Go/Fyne GUI for inspecting and changing display configuratio
 - M3 arrangement editing: complete. Tiles drag in logical pixels, snap within 12 screen pixels, reject overlapping drops, stay synchronized with numeric X/Y entry, auto-arrange into a gap-free row, and show numbered identify overlays for 3 seconds.
 - M4 robustness: complete. A 3-second fingerprint poll updates outputs and discards dirty drafts on hotplug with a banner, three consecutive failures enter the lost-connection state, close during apply rolls back before exit, replies are size- and timeout-bounded, and debug logging reports operation, duration, and output names.
 - M5 packaging: complete. `scripts/package.sh` builds a versioned Wayland binary and creates a tar.xz with an app-ID desktop entry and hicolor icon; `scripts/install.sh` installs to a user or staged prefix; the packaged app launches from the menu with application ID `io.github.randomlemon.midori`.
-- M6–M7: not started.
-- M8 persistence: deferred; no configuration-file writes.
+- M6 export current configuration: not started; next milestone. Writes a backend-neutral JSON snapshot to the home directory on request, never a compositor configuration file.
+- M7–M8 Hyprland: future work; lowest priority, implemented last, not scheduled.
 
 ## Document map
 
@@ -38,7 +38,7 @@ Midori is a desktop Go/Fyne GUI for inspecting and changing display configuratio
 | [`architecture.md`](architecture.md) | Layers, packages, domain model, backend contract, apply/revert state machine, backend selection, validation, polling, security. | Implementing or reviewing any code. |
 | [`ui.md`](ui.md) | Window layout, canvas, inspector, confirmation dialog, copy, empty/error states, accessibility. | Changing any user-visible behavior. |
 | [`backends/niri.md`](backends/niri.md) | niri IPC discovery, exact JSON schema, mapping, apply order, limitations. | Touching the niri client or codec. |
-| [`backends/hyprland.md`](backends/hyprland.md) | Future adapter for Hyprland 0.55+ Lua config: read-only inventory first, apply design gated on rule-preservation verification. | Adding or reviewing Hyprland support. |
+| [`backends/hyprland.md`](backends/hyprland.md) | Future-work adapter, sequenced last: Hyprland 0.55+ Lua config, read-only inventory first, apply design gated on rule-preservation verification. | Adding or reviewing Hyprland support after all other approved work. |
 | [`development.md`](development.md) | Toolchain, dependencies, build, tests, package layout, CI. | Setting up a checkout or a CI job. |
 | [`roadmap.md`](roadmap.md) | Milestones and observable acceptance criteria. | Planning the next implementation step. |
 
@@ -59,6 +59,7 @@ For a new contributor: [`README.md`](README.md) → [`product.md`](product.md) �
 | logical pixel | A compositor coordinate-space unit after scale and transform. |
 | physical pixel | A mode dimension. |
 | snapshot | The last successfully observed compositor state. |
+| export | Explicit, user-triggered write of the current applied configuration as a backend-neutral JSON snapshot in the user's home directory; never loaded automatically. |
 | draft | Pending edits that have not been applied. |
 | apply transaction | The sequence that snapshots, applies, confirms, and optionally reverts. |
 | backend | A compositor-specific adapter implementing `display.Backend`. |
@@ -69,11 +70,12 @@ For a new contributor: [`README.md`](README.md) → [`product.md`](product.md) �
 
 - Direct niri JSON IPC; no `niri msg` subprocess.
 - `hyprctl` with JSON output for Hyprland; no private socket protocol.
-- No config-file writes in v1; changes are runtime-only and session-only.
+- No compositor configuration writes in v1; changes are runtime-only and session-only. Explicit export writes only a backend-neutral JSON snapshot under `$HOME` and is never loaded automatically.
 - One apply transaction at a time; the service serializes apply and revert.
 - Confirmation is required for every apply, with a 15-second automatic revert.
 - Disabled outputs are excluded from overlap validation but remain listed and editable.
 - At least one output must remain enabled.
+- Hyprland support is future work and is the last roadmap item; niri work and every other approved milestone take precedence.
 - Hyprland starts read-only; apply is gated on verifying that `hl.monitor` preserves unmanaged per-output fields before `hyprctl eval` is enabled on the Lua config provider.
 - Linux packaging uses an application-ID desktop entry, a hicolor icon, and a Wayland-tagged binary. Version is injected with ldflags. No daemon or systemd unit is installed.
 

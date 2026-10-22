@@ -2,7 +2,7 @@
 
 Phased implementation order with observable acceptance criteria for each milestone.
 
-Status: Design draft. Documentation is milestone M0. Each milestone ends with the affected docs and tests updated, plus a manual smoke test where the milestone changes backend or UI behavior. Scope boundaries are defined in [product.md](product.md); contracts are in [architecture.md](architecture.md).
+Status: Design draft. Documentation is milestone M0. Each milestone ends with the affected docs and tests updated, plus a manual smoke test where the milestone changes backend or UI behavior. Scope boundaries are defined in [product.md](product.md); contracts are in [architecture.md](architecture.md). Hyprland support is future work, sequenced last and not scheduled.
 
 ## M0 Documentation
 
@@ -131,9 +131,34 @@ Acceptance criteria:
 
 Docs to update: [development.md](development.md), [README.md](README.md), this roadmap.
 
-## M6 Hyprland read-only
+## M6 Export current configuration to the user directory
 
 Status: not started; next milestone.
+
+Work:
+
+- Add an `Export` action that writes the last successfully observed snapshot as backend-neutral JSON to the user's home directory.
+- Name the file `midori-display-config-<backend>-<YYYYMMDDTHHMMSSZ>.json`, create it with `os.O_CREATE|os.O_EXCL` and mode `0o600`, and remove a partial file on write failure. Never overwrite an existing file.
+- Serialize schema version, export and capture timestamps, backend ID and version, and every output in connector-name order. For enabled outputs, include the current applied mode, scale, transform, position, logical size, VRR support/state, and custom-mode flag; for disabled outputs, include only the connector and `enabled: false`. Omit serial numbers, make/model text, physical size, advertised mode lists, and raw compositor payloads.
+- Never export unapplied draft edits. Do not call the backend, apply, reload, or write any compositor configuration path.
+- Map file and permission failures to a banner; report success with the absolute file path.
+- Add unit tests for JSON serialization, filename generation, overwrite refusal, partial-file cleanup, and draft exclusion; add UI tests for enablement and banner copy.
+- Add a manual niri smoke test that exports in clean and dirty states and verifies the compositor is unchanged.
+
+Acceptance criteria:
+
+- `Export` is enabled in `Ready` and `Dirty` and writes exactly one file under `$HOME`; it is disabled in `Loading`, `Unavailable`, `Applying`, `Confirming`, and `Reverting`.
+- The exported JSON includes every output, including disabled outputs with `enabled: false`, and excludes draft edits and serial numbers.
+- A clean-state export and a dirty-state export produce the same applied configuration when the draft has not been applied.
+- No file outside `$HOME` is written, no compositor configuration path is touched, and an existing export file is never overwritten.
+- A failed write leaves no partial file and shows `Could not export the display configuration to your home directory.`
+- `gofmt -l .`, `go vet ./...`, `go test ./...`, and `go test -race ./...` pass.
+
+Docs to update: [architecture.md](architecture.md), [product.md](product.md), [ui.md](ui.md), [development.md](development.md), [README.md](README.md), [AGENTS.md](../AGENTS.md), and this roadmap.
+
+## M7 Hyprland read-only (future work, last)
+
+Status: Future work; not started and not scheduled. Lowest priority: implement last, only after all other approved work is complete or explicitly deferred.
 
 Work:
 
@@ -153,7 +178,9 @@ Acceptance criteria:
 
 Docs to update: [backends/hyprland.md](backends/hyprland.md), [README.md](README.md), [architecture.md](architecture.md) package layout if files are added, this roadmap.
 
-## M7 Hyprland apply (gated)
+## M8 Hyprland apply (future work, last, gated)
+
+Status: Future work; not started and not scheduled. Lowest priority: implement last, only after M7. Do not ship before the preservation gate in [backends/hyprland.md](backends/hyprland.md) passes.
 
 Work:
 
@@ -171,12 +198,6 @@ Acceptance criteria:
 - The backend remains read-only on the `hyprlang` provider.
 
 Docs to update: [backends/hyprland.md](backends/hyprland.md), [architecture.md](architecture.md), [development.md](development.md) for the live test, [README.md](README.md), this roadmap.
-
-## M8 Persistence (deferred)
-
-Explicitly not started. Persistence requires a separate approved design covering configuration backups, parsing and formatting preservation, reload semantics, and failure recovery. Do not include implementation tasks for it in this roadmap, and do not add a Save action without that design.
-
-Docs to update before work starts: [architecture.md](architecture.md), [product.md](product.md), [ui.md](ui.md), [development.md](development.md), [README.md](README.md), and this roadmap.
 
 ## See also
 

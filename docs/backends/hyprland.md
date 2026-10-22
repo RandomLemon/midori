@@ -1,12 +1,13 @@
-# Hyprland Backend (Future)
+# Hyprland Backend (Future Work)
 
-Future Hyprland adapter design: read-only inventory first, with an apply path that stays gated until rule preservation is verified.
+Future-work Hyprland adapter design: read-only inventory first, with an apply path that stays gated until rule preservation is verified.
 
-Status: Design draft, not part of v1 implementation. Detection, listing, and capability reporting are specified for implementation in milestone M6; apply is specified for milestone M7 and must not ship before the gate in this document passes. See [../architecture.md](../architecture.md) and [../roadmap.md](../roadmap.md).
+Status: Design draft, not part of v1 implementation, and sequenced last in the roadmap. Detection, listing, and capability reporting are specified for milestone M7 (read-only); apply is specified for milestone M8 (gated) and must not ship before the gate in this document passes. Do not start either milestone until all other approved work is complete or explicitly deferred. See [../architecture.md](../architecture.md) and [../roadmap.md](../roadmap.md).
 
 ## Status and compatibility
 
-- Future backend; do not implement as part of the v1 niri deliverable.
+- Future work and the last roadmap item; do not implement as part of the v1 niri deliverable and do not start before all other approved work is complete or explicitly deferred.
+- Priority: lowest; Hyprland does not gate niri or any other approved milestone.
 - Target Hyprland `0.55` or newer with `configProvider: "lua"`.
 - Read-only inventory is the first supported Hyprland mode. It reports `Capabilities{Apply: false, VRR: true, Persistence: false}` and the UI shows the read-only banner.
 - Detection and listing may work on older versions and on the `hyprlang` provider; apply on `hyprlang` is permanently read-only in this backend and returns `ErrUnsupported`.
@@ -174,7 +175,7 @@ Result handling:
 
 - Non-zero exit or output other than `ok` is an error wrapping `ErrConnection` or `ErrUnsupported` as appropriate.
 - Timeout is 5 seconds per call.
-- No configuration-file writes; `eval` is runtime-only.
+- No compositor configuration-file writes; `eval` is runtime-only.
 
 ## Sequence and rollback
 
@@ -189,7 +190,7 @@ Result handling:
 - No VRR on-demand modes in v1; only on/off.
 - `availableModes` strings are the source of truth for selectable modes.
 - Hyprland positions are logical and interact with scale and transform; Midori uses the compositor's logical coordinates directly.
-- No persistence and no configuration-file writes; `hyprctl eval` changes are runtime-only and are lost on config reload or restart.
+- No persistence and no compositor configuration-file writes; `hyprctl eval` changes are runtime-only and are lost on config reload or restart. The backend-neutral M6 export does not change this.
 - Future Hyprland versions may change Lua table fields. Probe and return `ErrUnsupported` on command errors rather than guessing.
 - The preservation gate can keep the backend read-only indefinitely if `hl.monitor` cannot preserve unmanaged fields safely.
 

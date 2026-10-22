@@ -2,7 +2,7 @@
 
 The implementation contract for Midori: package boundaries, domain types, the backend interface, the apply and revert transaction, validation, layout math, and failure handling.
 
-Status: Design draft. M5 implements the editable inspector, the apply/confirmation/revert transaction, the arrangement editor, hotplug polling, connection-loss and recovery states, close-time rollback, bounded IPC diagnostics, and Linux packaging. Hyprland remains future work. This document is authoritative for types and behavior. Product scope is in [product.md](product.md); interaction details are in [ui.md](ui.md).
+Status: Design draft. M5 implements the editable inspector, the apply/confirmation/revert transaction, the arrangement editor, hotplug polling, connection-loss and recovery states, close-time rollback, bounded IPC diagnostics, and Linux packaging. M6 export is designed but not started. Hyprland remains future work, sequenced last and not scheduled. This document is authoritative for types and behavior. Product scope is in [product.md](product.md); interaction details are in [ui.md](ui.md).
 
 ## Context and constraints
 
@@ -10,13 +10,14 @@ Status: Design draft. M5 implements the editable inspector, the apply/confirmati
 - Linux/Wayland only; Fyne renders the UI with the Wayland driver selected by the `wayland` build tag.
 - Runtime-only: compositor configuration files are never written. niri documents output IPC changes as temporary; Hyprland `hyprctl eval` changes are lost on a config reload.
 - No root privileges, no network access, no telemetry.
-- niri `26.04` or newer is the first backend; Hyprland `0.55` or newer with the Lua config provider is a future backend.
+- niri `26.04` or newer is the first backend; Hyprland `0.55` or newer with the Lua config provider is a future backend, sequenced last.
 - Module path `github.com/RandomLemon/midori`; binary `midori`; application ID `io.github.randomlemon.midori`; Go `1.24.0` minimum; Fyne `fyne.io/fyne/v2 v2.8.2`.
 
 ## Process and threading model
 
 - The Fyne main goroutine owns all widget state and every widget mutation. Any code running outside a Fyne event callback MUST marshal UI updates with `fyne.Do` (Fyne 2.6+).
 - Backend calls run in short-lived goroutines with a `context.Context`. Backend calls MUST NOT run in a Fyne event callback: a 5-second socket or subprocess wait would freeze the UI.
+- Export writes run in a short-lived goroutine outside the Fyne event callback; the result is marshaled with `fyne.Do` before the banner updates.
 - `internal/display.Service` serializes transactions with a mutex. Only one apply or revert may run at a time. A second `Apply` call while one is running returns an error immediately rather than queuing.
 - Timers (the 15-second confirmation countdown and the 3-second poll) are `time.Ticker`/`time.Timer` loops owned by `internal/app`. Timer callbacks marshal into the Fyne goroutine before touching state.
 - The window close handler blocks Fyne's close path long enough to cancel and roll back per the apply algorithm; it does not block indefinitely, because every backend call has a 5-second timeout.
@@ -60,7 +61,7 @@ Import rules:
 
 ```text
 cmd/midori/main.go              flags, backend selection, app bootstrap
-internal/app/                   Fyne application, controller/state machine, timers, close intercept
+internal/app/                   Fyne application, controller/state machine, timers, close intercept, export
 internal/display/               domain types, Backend interface, Service, validation, errors
 internal/backend/registry.go    ordered backend factories and auto-detection
 internal/backend/niri/          niri IPC client, codec, backend adapter
@@ -199,7 +200,9 @@ Service responsibilities:
 
 A second concurrent `Apply` or `Revert` returns an error stating that a transaction is already running; it never interleaves backend calls.
 
-## Backend error taxonomy
+Export is an app-layer action over the last successful `Snapshot`. It adds no `Service` method and no `Backend` capability.
+
+## Error taxonomy
 
 ```go
 var (
@@ -208,12 +211,14 @@ var (
     ErrOutputMissing        = errors.New("output is no longer connected")
     ErrUnsupported          = errors.New("backend does not support this operation")
     ErrInvalidConfiguration = errors.New("invalid display configuration")
+    ErrExport               = errors.New("export failed")
 )
 ```
 
 Rules:
 
 - Backends wrap technical causes with `%w`, for example `fmt.Errorf("niri: apply mode on %s: %w", id, ErrOutputMissing)`.
+- `ErrExport` is an app-layer sentinel, not a backend capability. It wraps filesystem causes and is mapped to the export failure banner.
 - The UI maps sentinels to human messages; backend error strings are not shown verbatim.
 - `Apply` errors include the output ID and identify which output failed.
 - Validation failures wrap `ErrInvalidConfiguration` and identify the field.
@@ -373,16 +378,80 @@ Preview:
 - Polling continues in `Unavailable`. A successful poll returns to `Ready`; a pending draft is discarded and the hotplug banner is shown when the draft differed. A compositor restart that changes `$NIRI_SOCKET` still requires restarting Midori.
 - niri has no output topology event in its IPC event stream, so polling is required. Hyprland also uses polling to keep one code path.
 
-## Persistence
+## Persistence and export
+
+### Persistence
 
 v1 is runtime-only:
 
-- No Save button and no writes to niri KDL or Hyprland Lua/hyprlang configuration.
+- No Save button and no writes to niri KDL, Hyprland Lua/hyprlang configuration, or any other compositor configuration path.
 - niri documents output IPC changes as temporary and forgets them if the output configuration in the config file subsequently changes.
 - Hyprland `hyprctl eval` changes on the Lua config provider are runtime-only and are lost on a config reload.
 - UI copy explains session-only behavior; see [ui.md](ui.md).
 - A crash or forced kill during an apply can leave a partial runtime configuration. The recovery path is restarting the compositor or reloading its configuration, not a write by Midori.
 - Adding persistence requires a separate approved design covering backups, parsing and formatting preservation, and reload semantics.
+
+### Export
+
+M6 adds an explicit export action. It is not persistence and never writes a compositor configuration path.
+
+- `Export` serializes the last successful `Snapshot` to backend-neutral JSON in the user's home directory. It does not call the backend, apply, reload, import, or alter the draft.
+- Destination: `<home>/midori-display-config-<backend>-<YYYYMMDDTHHMMSSZ>.json`. `<home>` is `os.UserHomeDir()`, `<backend>` is `Backend.ID()` validated against `^[a-z0-9-]+$`, and the timestamp is UTC using Go layout `20060102T150405Z`. Export fails when the home directory is unavailable.
+- Create the file with `os.O_CREATE|os.O_EXCL` and mode `0o600`. Never overwrite an existing file or follow an existing symlink; remove the partial file when writing or closing fails.
+- `backendVersion` uses the cached badge value. When it is unavailable, serialize `"unknown"` without calling the backend.
+- Include every output in connector-name order, including disabled outputs. Exclude draft edits, serial numbers, make/model text, physical size, advertised mode lists, and raw compositor payloads.
+- Report success with the absolute path. Map filesystem failures to `ErrExport` and show the banner copy in [ui.md](ui.md). Log the outcome and byte count at debug level; do not log the full path, file contents, or serial numbers.
+- Export is available in `Ready` and `Dirty` and disabled in `Loading`, `Unavailable`, `Applying`, `Confirming`, and `Reverting`. It remains available for read-only backends.
+- Export is not import; Midori never reads exported files.
+
+Schema version 1:
+
+```json
+{
+  "schemaVersion": 1,
+  "exportedAt": "2026-10-22T17:30:00Z",
+  "capturedAt": "2026-10-22T17:29:58Z",
+  "backend": "niri",
+  "backendVersion": "26.04",
+  "outputs": [
+    {
+      "connector": "eDP-1",
+      "enabled": true,
+      "mode": {
+        "width": 1920,
+        "height": 1200,
+        "refreshMilliHz": 60000
+      },
+      "scale": 1,
+      "transform": "normal",
+      "position": {
+        "x": 0,
+        "y": 0
+      },
+      "logicalSize": {
+        "width": 1920,
+        "height": 1200
+      },
+      "vrrSupported": true,
+      "vrr": false,
+      "customMode": false
+    },
+    {
+      "connector": "DP-2",
+      "enabled": false
+    }
+  ]
+}
+```
+
+Rules:
+
+- `schemaVersion` is `1`.
+- `exportedAt` is the UTC write time; `capturedAt` is `Snapshot.CapturedAt`.
+- `backendVersion` is `"unknown"` when the badge has no version.
+- `transform` uses one of `normal`, `90`, `180`, `270`, `flipped`, `flipped-90`, `flipped-180`, `flipped-270`.
+- Enabled outputs include `mode`, `scale`, `transform`, `position`, `logicalSize`, `vrrSupported`, `vrr`, and `customMode`. Disabled outputs include only `connector` and `enabled: false`.
+- `refreshMilliHz` is an integer; `scale` is a JSON number; positions and logical sizes are integers.
 
 ## Security, logging, and failure handling
 
@@ -391,8 +460,10 @@ v1 is runtime-only:
 - Validate that `$NIRI_SOCKET` is non-empty before dialing.
 - Limit niri reply lines to 8 MiB; a longer line is an error, not an allocation.
 - Reject Hyprland output names containing control characters or newlines before interpolating them into a command.
+- Export writes only under the user's home directory, validates the backend ID, refuses to overwrite an existing file, and never follows an existing symlink.
+- Export JSON excludes serial numbers, make/model text, physical size, and raw compositor payloads.
 - Log backend ID, operation, duration, and output names at debug level only.
-- Do not log serial numbers or raw compositor configuration.
+- Do not log serial numbers, raw compositor configuration, full export paths, or exported file contents.
 - Every backend operation has a 5-second timeout. niri dials with a 2-second timeout.
 - No `panic` for expected failures. Validate all external JSON and command output.
 

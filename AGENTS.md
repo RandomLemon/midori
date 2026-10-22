@@ -4,7 +4,7 @@ Operational instructions for coding agents working on Midori, a Linux/Wayland di
 
 ## Project
 
-Midori is a Linux/Wayland display-configuration GUI for the niri compositor, written in Go with Fyne, and designed so additional compositor backends can be added without changing the UI. The repository contains the M5 implementation: module skeleton, domain and service layers, the niri IPC backend, a Fyne window with editable output controls, the apply/confirmation/revert flow, the arrangement editor with drag, snapping, numeric positioning, auto-arrange, and identify overlays, hotplug polling, connection-loss recovery, close-time rollback, structured debug logging, and versioned Linux packaging with an application icon and desktop entry. Hyprland remains a future milestone. The authoritative design starts at [`docs/README.md`](docs/README.md).
+Midori is a Linux/Wayland display-configuration GUI for the niri compositor, written in Go with Fyne, and designed so additional compositor backends can be added without changing the UI. The repository contains the M5 implementation: module skeleton, domain and service layers, the niri IPC backend, a Fyne window with editable output controls, the apply/confirmation/revert flow, the arrangement editor with drag, snapping, numeric positioning, auto-arrange, and identify overlays, hotplug polling, connection-loss recovery, close-time rollback, structured debug logging, and versioned Linux packaging with an application icon and desktop entry. M6 export is designed but not started. Hyprland remains future work, sequenced last. The authoritative design starts at [`docs/README.md`](docs/README.md).
 
 - Module path: `github.com/RandomLemon/midori`
 - Binary name: `midori`
@@ -34,9 +34,10 @@ Read the documentation in this order before changing behavior:
 - The UI never talks to a compositor. It calls `internal/display.Service`; only `internal/backend/*` implements `display.Backend`.
 - Backend-specific types MUST NOT escape the backend package. The domain uses only `internal/display` types.
 - Every apply is a transaction: snapshot, apply per output, reload, confirm with a 15-second countdown, and revert on timeout, explicit revert, or window close. Partial failure triggers best-effort rollback.
-- v1 is runtime-only. NEVER write `~/.config/niri/config.kdl`, Hyprland config files, or any compositor configuration. Do not add a Save action without a new approved design.
+- v1 is runtime-only. NEVER write `~/.config/niri/config.kdl`, Hyprland config files, or any compositor configuration path. M6 export is the only runtime file write: an explicit backend-neutral JSON snapshot under `$HOME`; it is never auto-loaded or auto-applied. Do not add a Save action without a new approved design.
 - niri uses direct JSON IPC on `$NIRI_SOCKET`; do not shell out to `niri msg` for core operations.
 - Hyprland inventory uses `hyprctl` with `-j`; do not implement Hyprland's private socket protocol. Initial Hyprland support is read-only. Apply only through `hyprctl eval` for a Lua config provider, and only after the rule-preservation gate in [`docs/backends/hyprland.md`](docs/backends/hyprland.md) passes.
+- Hyprland is future work and is sequenced last; do not start it before all other approved milestones are complete or explicitly deferred.
 - All Fyne object mutations happen on the Fyne goroutine. Background results are marshaled with `fyne.Do`; backend calls MUST NOT run in a Fyne event callback.
 - All backend calls take a `context.Context` with the documented timeout. No unbounded subprocess or socket reads.
 - No root privileges, no network access, no telemetry, no shell command construction.
@@ -45,11 +46,11 @@ Documented timeouts and limits: backend operation timeout `5` seconds, niri dial
 
 ## Target repository layout
 
-This tree is the package contract. M5 implements `cmd/midori`, `internal/app`, `internal/display`, `internal/backend`, `internal/backend/niri`, `internal/layout`, `internal/ui`, `internal/testutil/fakebackend`, `FyneApp.toml`, `assets/`, `packaging/`, and `scripts/`; `internal/backend/hyprland` remains future work.
+This tree is the package contract. M5 implements `cmd/midori`, `internal/app`, `internal/display`, `internal/backend`, `internal/backend/niri`, `internal/layout`, `internal/ui`, `internal/testutil/fakebackend`, `FyneApp.toml`, `assets/`, `packaging/`, and `scripts/`; `internal/backend/hyprland` remains future work, sequenced last.
 
 ```text
 cmd/midori/main.go              flags, backend selection, app bootstrap
-internal/app/                   Fyne application, controller/state machine, timers, close intercept
+internal/app/                   Fyne application, controller/state machine, timers, close intercept, export
 internal/display/               domain types, Backend interface, Service, validation, errors
 internal/backend/registry.go    ordered backend factories and auto-detection
 internal/backend/niri/          niri IPC client, codec, backend adapter
@@ -100,19 +101,20 @@ Exact install commands and caveats are in [`docs/development.md`](docs/developme
 
 ## Testing
 
-- Unit tests for domain validation, layout math, JSON codecs, transaction state, and Hyprland parsing.
+- Unit tests for domain validation, layout math, JSON codecs, transaction state, Hyprland parsing, and M6 export serialization, filename generation, and exclusive file creation.
 - A scriptable fake backend in `internal/testutil/fakebackend` for service and controller tests.
 - niri codec golden JSON tests and a fake Unix-socket server round trip.
 - Live niri tests are opt-in, read-only by default, and MUST revert any change they make.
 - UI tests use `fyne.io/fyne/v2/test`.
-- Backend or UI behavior changes require a manual niri smoke test.
+- Backend or UI behavior changes require a manual niri smoke test. Export changes must verify the file path, contents, and that the compositor state is unchanged.
 
 The full strategy, including the manual matrix, is in [`docs/development.md`](docs/development.md).
 
 ## Safety and data
 
 - Do not modify user configuration. v1 never writes compositor configuration.
-- Do not log raw compositor configuration or serial numbers unnecessarily; output names may be logged. Log backend ID, operation, duration, and output names at debug level only.
+- M6 export writes only a backend-neutral JSON snapshot under `$HOME`; it excludes serial numbers, make/model text, physical size, advertised mode lists, and raw compositor payloads.
+- Do not log raw compositor configuration, serial numbers, full export paths, or exported file contents unnecessarily; output names may be logged. Log backend ID, operation, duration, and output names at debug level only.
 - Reject control characters and newlines in backend text before display or command construction.
 - No root privileges, no network access, no telemetry.
 

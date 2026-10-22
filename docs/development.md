@@ -2,7 +2,7 @@
 
 How to build, test, and extend Midori, including toolchain, dependencies, test strategy, CI, and packaging.
 
-Status: M5 implemented. The commands below are active for the current module. See [architecture.md](architecture.md) for package contracts and [AGENTS.md](../AGENTS.md) for agent rules.
+Status: M5 implemented. The commands below are active for the current module. M6 export is designed but not started. Hyprland support is future work, sequenced last and not scheduled. See [architecture.md](architecture.md) for package contracts and [AGENTS.md](../AGENTS.md) for agent rules.
 
 ## Toolchain
 
@@ -82,7 +82,7 @@ gofmt -l .
 
 ```text
 cmd/midori/main.go              flags, backend selection, app bootstrap
-internal/app/                   Fyne application, controller/state machine, timers, close intercept
+internal/app/                   Fyne application, controller/state machine, timers, close intercept, export
 internal/display/               domain types, Backend interface, Service, validation, errors
 internal/backend/registry.go    ordered backend factories and auto-detection
 internal/backend/niri/          niri IPC client, codec, backend adapter
@@ -125,7 +125,8 @@ Pure unit tests:
 - Transform logical-size math for all eight transforms.
 - Snap, overlap, bounds, and auto-arrange.
 - niri JSON codec encode/decode.
-- Hyprland parser and mode-token mapping.
+- Hyprland parser and mode-token mapping (future work, sequenced last).
+- M6 export JSON serialization, filename generation, exclusive file creation, overwrite refusal, partial-file cleanup, and draft exclusion.
 
 Service and controller tests with `fakebackend`:
 
@@ -153,6 +154,8 @@ niri IPC tests:
 UI tests:
 
 - Use `fyne.io/fyne/v2/test` for widget construction, button enablement, and dirty/clean transitions.
+- Cover `Export` enablement by state, including staying enabled on a read-only backend and disabled while busy.
+- Cover export success and failure banner copy, and confirm a dirty-state export leaves `Unsaved changes` intact.
 - No screenshot golden tests.
 
 Live tests:
@@ -177,12 +180,15 @@ Manual matrix for backend or UI changes:
 - Invalid mode selection.
 - Drag with edge snapping, numeric X/Y synchronization, and overlapping-drop rejection.
 - Auto arrange into a gap-free row and identify overlays that disappear after 3 seconds.
+- Export in clean and dirty states; verify the path, JSON fields, unchanged compositor, and overwrite refusal.
+- Export failure with an unwritable home directory supplied through a temporary `$HOME`.
 - Socket loss and niri restart.
 - Malformed reply from a fake server.
 
 ## Fixtures and fake backend
 
 - Fixtures are synthetic JSON only. No real serial numbers, hostnames, or user paths.
+- Export tests use `t.TempDir()` as the home directory and never write outside it.
 - The fake backend supports:
   - Scripted outputs per call.
   - Per-output apply errors.
@@ -203,7 +209,7 @@ Manual matrix for backend or UI changes:
 - Use `log/slog`.
 - `--debug` sets the level to debug on stderr; the default level is info.
 - Log backend selection, operation name, duration, and output names at debug level.
-- Never log raw compositor configuration or serial numbers.
+- Never log raw compositor configuration, serial numbers, full export paths, or exported file contents.
 - A debug dump includes the selected backend ID, its version or `unknown`, the output count, and the poll fingerprint state. Poll changes, reconnect attempts, and connection-loss transitions are logged at debug level.
 
 ## CI
