@@ -1,0 +1,110 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+      - '[0-9]*'
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  release:
+    name: Build and publish
+    runs-on: ubuntu-22.04
+    timeout-minutes: 30
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Set up Go
+        uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Install Fyne build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes --no-install-recommends \
+            desktop-file-utils \
+            gcc \
+            libgl1-mesa-dev \
+            libwayland-dev \
+            libxkbcommon-dev \
+            xorg-dev
+
+      - name: Check formatting
+        run: test -z "$(gofmt -l .)"
+
+      - name: Vet
+        run: go vet ./...
+
+      - name: Test
+        run: go test ./...
+
+      - name: Test with race detector
+        run: go test -race ./...
+
+      - name: Validate shell scripts
+        run: sh -n scripts/*.sh
+
+      - name: Build release bundle
+        env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          version="${TAG#v}"
+          if [ -z "$version" ]; then
+            echo "release: tag must contain a version" >&2
+            exit 2
+          fi
+          case "$version" in
+            *[!0-9A-Za-z.+-]*)
+              echo "release: tag version contains unsupported characters" >&2
+              exit 2
+              ;;
+          esac
+          asset=$(VERSION="$version" ./scripts/package.sh)
+          if [ ! -f "$asset" ]; then
+            echo "release: packaging did not produce $asset" >&2
+            exit 1
+          fi
+          (
+            cd dist
+            sha256sum "$(basename "$asset")" >SHA256SUMS
+          )
+          {
+            printf 'RELEASE_VERSION=%s\n' "$version"
+            printf 'RELEASE_ASSET=%s\n' "$asset"
+          } >>"$GITHUB_ENV"
+
+      - name: Create or update GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          assets=("$RELEASE_ASSET" dist/SHA256SUMS)
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release upload "$TAG" "${assets[@]}" --clobber
+            exit 0
+          fi
+          core_version="${RELEASE_VERSION%%+*}"
+          case "$core_version" in
+            *-*)
+              gh release create "$TAG" "${assets[@]}" \
+                --title "$TAG" --generate-notes --prerelease
+              ;;
+            *)
+              gh release create "$TAG" "${assets[@]}" \
+                --title "$TAG" --generate-notes
+              ;;
+          esac

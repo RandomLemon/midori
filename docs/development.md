@@ -212,20 +212,26 @@ Manual matrix for backend or UI changes:
 - Never log raw compositor configuration, serial numbers, full export paths, or exported file contents.
 - A debug dump includes the selected backend ID, its version or `unknown`, the output count, and the poll fingerprint state. Poll changes, reconnect attempts, and connection-loss transitions are logged at debug level.
 
-## CI
+## CI and releases
 
-Linux job:
+GitHub Actions workflows live in `.github/workflows/`:
 
-- Go `1.24`.
-- Fyne Wayland build dependencies from [System dependencies](#system-dependencies).
-- `gofmt -l .` must print nothing.
-- `go vet ./...`.
-- `go test ./...`.
-- `CGO_ENABLED=1 go build -tags wayland -trimpath ./cmd/midori`.
-- `sh -n scripts/*.sh`.
-- `VERSION=0.1.0 ./scripts/package.sh`.
+- `ci.yml` runs on pushes to `main`, pull requests, and manual dispatches. It uses Ubuntu 22.04, Go `1.24`, and the Fyne Wayland build dependencies from [System dependencies](#system-dependencies), then checks formatting, vets, runs the unit and race tests, validates the shell scripts, builds the Wayland binary, and packages version `0.1.0`.
+- `release.yml` runs for SemVer tags that start with `v` or a digit. It repeats the checks, strips a leading `v` from the tag for `VERSION`, runs `./scripts/package.sh`, writes `dist/SHA256SUMS`, and creates the GitHub release for the tag. If the release already exists, it uploads the assets with `--clobber` instead. A prerelease tag such as `v0.3.0-rc.1` creates a prerelease.
 
-No GUI tests and no live compositor in CI. A future matrix can add the latest Go release.
+Release assets:
+
+- `midori-<version>-linux-amd64.tar.xz`
+- `SHA256SUMS`
+
+The release runner is Ubuntu 22.04 x86_64, so the bundle targets glibc `2.35` or newer. Publish a release by pushing a tag:
+
+```sh
+git tag v0.2.0
+git push origin v0.2.0
+```
+
+No live compositor or manual GUI tests run in CI.
 
 ## Packaging
 

@@ -26,7 +26,7 @@ Midori is a desktop Go/Fyne GUI for inspecting and changing display configuratio
 - M2 inspector editing and apply/revert: complete. The inspector edits mode, refresh, scale, rotation, enablement, VRR, and position; apply uses a 15-second confirmation with automatic revert, rollback, and close interception.
 - M3 arrangement editing: complete. Tiles drag in logical pixels, snap within 12 screen pixels, reject overlapping drops, stay synchronized with numeric X/Y entry, auto-arrange into a gap-free row, and show numbered identify overlays for 3 seconds.
 - M4 robustness: complete. A 3-second fingerprint poll updates outputs and discards dirty drafts on hotplug with a banner, three consecutive failures enter the lost-connection state, close during apply rolls back before exit, replies are size- and timeout-bounded, and debug logging reports operation, duration, and output names.
-- M5 packaging: complete. `scripts/package.sh` builds a versioned Wayland binary and creates a tar.xz with an app-ID desktop entry and hicolor icon; `scripts/install.sh` installs to a user or staged prefix; the packaged app launches from the menu with application ID `io.github.randomlemon.midori`.
+- M5 packaging: complete. `scripts/package.sh` builds a versioned Wayland binary and creates a tar.xz with an app-ID desktop entry and hicolor icon; `scripts/install.sh` installs to a user or staged prefix; the packaged app launches from the menu with application ID `io.github.randomlemon.midori`. GitHub Actions checks pushes and pull requests, and publishes tagged releases with checksummed Linux bundles.
 - M6 export current configuration: not started; next milestone. Writes a backend-neutral JSON snapshot to the home directory on request, never a compositor configuration file.
 - M7–M8 Hyprland: future work; lowest priority, implemented last, not scheduled.
 
@@ -39,7 +39,7 @@ Midori is a desktop Go/Fyne GUI for inspecting and changing display configuratio
 | [`ui.md`](ui.md) | Window layout, canvas, inspector, confirmation dialog, copy, empty/error states, accessibility. | Changing any user-visible behavior. |
 | [`backends/niri.md`](backends/niri.md) | niri IPC discovery, exact JSON schema, mapping, apply order, limitations. | Touching the niri client or codec. |
 | [`backends/hyprland.md`](backends/hyprland.md) | Future-work adapter, sequenced last: Hyprland 0.55+ Lua config, read-only inventory first, apply design gated on rule-preservation verification. | Adding or reviewing Hyprland support after all other approved work. |
-| [`development.md`](development.md) | Toolchain, dependencies, build, tests, package layout, CI. | Setting up a checkout or a CI job. |
+| [`development.md`](development.md) | Toolchain, dependencies, build, tests, package layout, CI, and releases. | Setting up a checkout or a CI job. |
 | [`roadmap.md`](roadmap.md) | Milestones and observable acceptance criteria. | Planning the next implementation step. |
 
 ## Suggested reading order

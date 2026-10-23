@@ -74,6 +74,8 @@ gofmt -l .
 
 ## Install and package
 
+Tagged releases publish a Linux amd64 `tar.xz` bundle and `SHA256SUMS` on [GitHub Releases](https://github.com/RandomLemon/midori/releases).
+
 Install to `~/.local` (override with `PREFIX`):
 
 ```sh
